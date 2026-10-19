@@ -1,0 +1,4 @@
+traceability: generated
+required_keys: [id, type, status]
+siblings:
+  hub: ../sdlc
