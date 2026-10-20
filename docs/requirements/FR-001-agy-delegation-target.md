@@ -116,10 +116,11 @@ them if the engine moves.
 10. **The runtime rule is ADR-014's.** The runtime is zero-dependency Node `.mjs`. Every process the
     plugin starts is an executable plus an argv array, with `shell` absent or false. No runtime file
     names a shell or passes a command string. A job spawns at most one agy process. A job that fails
-    before spawning, such as a follow-up with no recorded conversation id, spawns none. Once a job
-    is terminal, neither its agy process nor any process the plugin started to run or wait on that
-    job is alive. Status and result invocations are readers. They are not part of any job, and they
-    exit after printing.
+    before spawning, such as a follow-up with no recorded conversation id, spawns none. A job's
+    agy process has exited before its terminal state is written, because the state is assigned at
+    process exit. Any process the plugin started to run or wait on that job may write the terminal
+    state, and has exited within 5 seconds of the moment the record first reads terminal. Status and
+    result invocations are readers. They are not part of any job, and they exit after printing.
 11. **Hub practice, tested nowhere in this repository.** A review through this plugin is the agy
     leg of the cross-AI review practice. A raw `agy -p` from a session's shell is deprecated for the
     same reason raw `codex exec` is: no job record, no structured findings, and a proof
@@ -200,8 +201,9 @@ The checks:
   run. A review leg's argv contains `--mode plan` and `--json-schema`. A task leg's argv contains
   neither `--mode plan` nor `--sandbox`.
 - **Processes.** Every job records at most one agy spawn, and the missing-conversation-id job records
-  none. Once a job is terminal, its recorded agy process id and every process the plugin started for
-  that job are no longer alive. Each status and result invocation exits after printing.
+  none. At the moment the record first reads terminal, the job's recorded agy process is not alive.
+  Five seconds after that moment, no process the plugin started for that job is alive. Each status
+  and result invocation exits after printing.
 - **Subagent.** The plugin ships exactly one agent definition, and its tools are the shell alone. Given
   `--background fix the --fresh parser`, its transcript has one tool call: the runtime, invoked
   with the background flag and the task text `fix the --fresh parser`. Given
