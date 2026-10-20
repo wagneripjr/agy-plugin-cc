@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { claimTerminal, readJob, writeRecord } from './jobs.mjs';
+import { claimTerminal, markSpawning, readJob, writeRecord } from './jobs.mjs';
 import { killGroup } from './process.mjs';
 import { marker, stepCount, unproven, verify } from './proof.mjs';
 import { FINDINGS_SCHEMA, findingsViolations } from './schema.mjs';
@@ -80,16 +80,20 @@ export function finalize(job, run, exit) {
   return job;
 }
 
-export function failBeforeSpawn(job, code, message) {
+export function failJob(job, code, message) {
   return finalize(job, { result: null, reason: ending(code, message), stderr: '' }, { code: null, signal: null });
 }
 
-export function runEngine(job, prompt, conversationId = null) {
+export function prepareRun(job, prompt, conversationId = null) {
+  job.argv = engineArgv(`${prompt}\n\n${marker(job.id)}`, job, conversationId);
+  job.proof = unproven(conversationId ? stepCount(conversation(conversationId).file) : 0);
+  writeRecord(job);
+}
+
+export function runEngine(job) {
   return new Promise((done) => {
     const run = { result: null, reason: null, stderr: '' };
-    job.argv = engineArgv(`${prompt}\n\n${marker(job.id)}`, job, conversationId);
-    job.proof = unproven(conversationId ? stepCount(conversation(conversationId).file) : 0);
-    writeRecord(job);
+    markSpawning(job.id);
     const child = spawn(ENGINE, job.argv, { cwd: job.cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let ended = false;
     const end = (exit) => {

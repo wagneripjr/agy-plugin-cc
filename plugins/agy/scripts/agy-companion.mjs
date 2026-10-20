@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 
 import { parseDelegation } from './lib/args.mjs';
-import { DEFAULT_SETTINGS, failBeforeSpawn, runEngine } from './lib/engine.mjs';
-import { conversationToContinue, createJob, readJob } from './lib/jobs.mjs';
+import { startInBackground } from './lib/background.mjs';
+import { DEFAULT_SETTINGS, failJob, prepareRun, runEngine } from './lib/engine.mjs';
+import { claimRunner, conversationToContinue, createJob, isJobId, readJob } from './lib/jobs.mjs';
 import { renderJob } from './lib/render.mjs';
 import { reviewPrompt } from './lib/review.mjs';
 import { renderSetup, setup } from './lib/setup.mjs';
@@ -10,8 +11,8 @@ import { renderSetup, setup } from './lib/setup.mjs';
 const USAGE = [
   'usage: agy-companion.mjs --version',
   '       agy-companion.mjs setup [--json]',
-  '       agy-companion.mjs review [--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] [focus]',
-  '       agy-companion.mjs task [--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] <task text>',
+  '       agy-companion.mjs review [--background|--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] [focus]',
+  '       agy-companion.mjs task [--background|--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] <task text>',
   '       agy-companion.mjs status|result <job-id> [--json]',
   '',
 ].join('\n');
@@ -23,16 +24,31 @@ function usage() {
 
 async function delegate(kind, argv) {
   const parsed = parseDelegation(argv);
-  if (!parsed || (kind === 'task' && parsed.text.trim() === '') || (parsed.options.fresh && parsed.options.resume !== undefined)) return usage();
+  if (!parsed || (kind === 'task' && parsed.text.trim() === '')) return usage();
+  if ((parsed.options.fresh && parsed.options.resume !== undefined) || (parsed.options.background && parsed.options.wait)) return usage();
   const settings = { model: parsed.options.model ?? DEFAULT_SETTINGS.model, effort: parsed.options.effort ?? DEFAULT_SETTINGS.effort };
   const prompt = kind === 'review' ? await reviewPrompt(process.cwd(), parsed.text.trim()) : parsed.text;
   const job = createJob({ kind, settings, cwd: process.cwd() });
   const resumed = parsed.options.resume;
   const conversationId = resumed === undefined ? null : conversationToContinue(resumed);
   const finished = resumed !== undefined && !conversationId
-    ? failBeforeSpawn(job, 'no-conversation-to-continue', `job ${resumed} has no recorded conversation to continue`)
-    : await runEngine(job, prompt, conversationId);
+    ? failJob(job, 'no-conversation-to-continue', `job ${resumed} has no recorded conversation to continue`)
+    : await start(job, prompt, conversationId, parsed.options.background === true);
   process.stdout.write(renderJob(finished, { json: parsed.options.json === true }));
+}
+
+async function start(job, prompt, conversationId, background) {
+  prepareRun(job, prompt, conversationId);
+  if (!background) return runEngine(job);
+  const { record, settled } = await startInBackground(job);
+  if (!settled) process.exitCode = 1;
+  return record;
+}
+
+async function runJob([id, ...extra]) {
+  if (!isJobId(id) || extra.length > 0) return usage();
+  if (!claimRunner(id)) return;
+  await runEngine(readJob(id));
 }
 
 function read(command, [id, ...flags]) {
@@ -58,6 +74,8 @@ try {
     if (!report.engine.installed) process.exitCode = 1;
   } else if (command === 'review' || command === 'task') {
     await delegate(command, rest);
+  } else if (command === 'run-job') {
+    await runJob(rest);
   } else if (command === 'status' || command === 'result') {
     read(command, rest);
   } else {

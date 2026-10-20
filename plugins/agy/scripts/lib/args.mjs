@@ -1,4 +1,4 @@
-const VALUELESS = new Set(['--wait', '--fresh', '--json']);
+const VALUELESS = new Set(['--background', '--wait', '--fresh', '--json']);
 const VALUED = new Set(['--resume', '--model', '--effort']);
 
 export function parseDelegation(argv) {

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { closeSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
@@ -67,12 +67,28 @@ export function conversationToContinue(id) {
   return readJob(id)?.conversation?.id ?? null;
 }
 
-export function claimTerminal(id) {
+function claim(id, suffix) {
   try {
-    closeSync(openSync(join(jobsDir(), `${id}.terminal`), 'wx'));
+    closeSync(openSync(join(jobsDir(), `${id}.${suffix}`), 'wx'));
     return true;
   } catch (error) {
     if (error.code === 'EEXIST') return false;
     throw error;
   }
+}
+
+export function claimTerminal(id) {
+  return claim(id, 'terminal');
+}
+
+export function claimRunner(id) {
+  return claim(id, 'runner');
+}
+
+export function markSpawning(id) {
+  writeFileSync(join(jobsDir(), `${id}.spawning`), '');
+}
+
+export function isSpawning(id) {
+  return existsSync(join(jobsDir(), `${id}.spawning`));
 }
