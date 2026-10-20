@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { claimTerminal, readJob, writeRecord } from './jobs.mjs';
+import { marker, stepCount, unproven, verify } from './proof.mjs';
 
 const ENGINE = 'agy';
 const STDERR_KEPT = 2000;
@@ -60,6 +61,7 @@ export function finalize(job, run, exit) {
   job.state = reason ? 'failed' : 'succeeded';
   job.reason = reason ?? null;
   job.response = reason ? null : run.result.response ?? null;
+  if (!reason) job.proof = verify(job);
   job.endedAt = new Date().toISOString();
   if (!claimTerminal(job.id)) return readJob(job.id);
   writeRecord(job);
@@ -73,7 +75,8 @@ export function failBeforeSpawn(job, code, message) {
 export function runEngine(job, prompt, conversationId = null) {
   return new Promise((done) => {
     const run = { result: null, reason: null, stderr: '' };
-    job.argv = engineArgv(prompt, job.settings, conversationId);
+    job.argv = engineArgv(`${prompt}\n\n${marker(job.id)}`, job.settings, conversationId);
+    job.proof = unproven(conversationId ? stepCount(conversation(conversationId).file) : 0);
     writeRecord(job);
     const child = spawn(ENGINE, job.argv, { cwd: job.cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let ended = false;
