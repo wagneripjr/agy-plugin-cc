@@ -23,50 +23,99 @@ while its own build runs under `agentic-sdlc`.
 
 Frozen at two anchors, both read 2026-10-19: `agy` 1.4.2 (model family `gemini-4-argon`) and
 `codex-plugin-cc` at `0630113` (plugin `codex` 1.0.7). If `agy --version` has moved, re-run the
-probes ADR-001 records before building on them.
+probes below and the ones ADR-001 records before building on them.
+
+## Frozen interfaces
+
+These are agy's own interfaces, which this repository does not own. They were measured on `agy`
+1.4.2, in addition to ADR-001's probes. The contract relies on them, and an implementation re-checks
+them if the engine moves.
+
+- `--mode plan --json-schema <schema> --output-format stream-json` emits `init` (carrying
+  `init.model`) and a final `result` whose `structured_output` holds the schema object. It does not
+  edit the tree. Both legs therefore read the same event stream.
+- `result.status` reads `SUCCESS` on success. `result.num_turns` read 2 for a single
+  schema-constrained invocation, so it does not count invocations.
+- A conversation is the SQLite file `~/.gemini/antigravity-cli/conversations/<conversation_id>.db`.
+  Its `steps` table is keyed by `idx`, and a user-input step has `step_type` 14. One
+  schema-constrained invocation wrote two user-input steps, and only the first carried the prompt
+  text. The prompt text is stored readable inside that step's `step_payload`.
+- `init` does not report the effort. agy has no account command; `agy models` lists models only for
+  a usable account. `agy mcp list` and `agy plugin list` enumerate configured MCP servers and
+  installed plugins.
 
 ## Contract
 
-1. **A delegation names its engine settings and the engine confirms them.** Every run records the
-   model and effort it was given. Every run that reached the engine's `init` event also carries the
-   model the engine reported there, so a reader sees that what was asked is what ran. A run that
-   failed before `init` carries the requested settings and says no confirmation arrived. The plugin
-   never lets the engine pick either setting.
-2. **A review leg returns findings, never prose, and cannot write.** A review returns an object
-   under a schema the plugin ships. Each finding in it carries at least a file, a line, a claim, the
-   evidence checked and a verdict. The working tree is unchanged after a review leg. A review whose
-   output does not satisfy the schema is reported as a failed review and is not rendered as prose.
-3. **A task leg may edit, and it reports what it did.** A task returns the engine's final response
-   and the conversation id. The tree is whatever the engine left.
-4. **Every run is a tracked job with a terminal state.** A run is in one of four states: running,
-   succeeded, failed or cancelled. Each of the following ends in failed, with the reason the plugin
-   saw: a startup failure, an engine that exits without a `result` event, an engine that reports a
-   non-success status, and output that violates a requested schema. A cancel ends the engine process
-   and records cancelled. Status and result read the same record, both while the run is live and
-   after it ends.
-5. **A job is resumable, and resuming is a choice.** A follow-up continues the recorded
-   conversation, and the caller names a fresh run explicitly. A follow-up answers with the prior
-   turns in context.
-6. **Proof is tied to the invocation.** The result names the conversation id, the conversation file
-   and the turn the invocation added. A reader can then tell from agy's own records that this
-   invocation's turn ran, not merely that the conversation exists. A succeeded run carries a
-   verification outcome, either verified or unverified. It is unverified when the engine reported
-   success but the conversation file is absent or did not gain the reported turn. Unverified is not
-   a fifth state. It is a property of succeeded, and the result states it.
+1. **A delegation names its engine settings and the engine confirms the model.** Every run is
+   started with an explicit `--model` and `--effort`, chosen by the caller or by the plugin's
+   documented defaults, never omitted so that agy picks. The job record keeps the argv it spawned.
+   A run that reached `init` records `init.model`. If that differs from the requested model, the
+   plugin ends the engine process and the run is failed, with a reason naming both models. The
+   effort is recorded as requested, and the result says the engine does not confirm it. A run that
+   ended before `init`, including one whose engine never started, carries the requested settings
+   and says no confirmation arrived.
+2. **A review leg returns findings, never prose, and cannot write.** A review runs `--mode plan`
+   with a findings schema the plugin ships. Each finding in it carries at least a file, a line, a
+   claim, the evidence checked and a verdict. The review's result is the structured output of
+   agy's final `result` event. Output that does not validate against that schema makes the run failed. The run's result is then
+   not rendered as findings, and the response prose is not shown in their place. The working
+   tree is unchanged after a review leg, as defined under Acceptance.
+3. **A task leg may edit, and it reports what it did.** A task runs in agy's default mode and never
+   with `--sandbox`. It returns the engine's final response and the conversation id. The tree is
+   whatever the engine left.
+4. **Every run is a tracked job with one terminal state.** A job is `running` from the moment its
+   record is created until the engine process has exited and the plugin has assigned exactly one of
+   `succeeded`, `failed` or `cancelled`. It is succeeded only when all of these hold: a `result`
+   event arrived, its status is `SUCCESS`, any requested schema validated, the model matched, and
+   the process exited 0. Otherwise it is failed, with the first reason the plugin saw. The possible
+   reasons are: the engine could not start, the process exited without a `result` event,
+   `result.status` was not `SUCCESS`, the output violated the schema, the model mismatched, or the
+   exit code was nonzero after a `SUCCESS` result. A cancel that arrives while the job is running
+   ends the engine process and records cancelled. A cancel on a terminal job changes nothing and
+   reports the state the job already has. The first terminal state written is final. Status and
+   result read the same record. A result on a running job reports running and no body. A result on
+   a failed or cancelled job reports the state, the reason and the engine settings, and no response
+   or findings body.
+5. **A job is resumable, and resuming is a choice.** An invocation that names no prior job starts a
+   fresh conversation, and an explicit fresh marker selects the same thing. A follow-up names a
+   prior job and continues that job's recorded conversation with `--conversation <id>`. A follow-up
+   naming a job that has no recorded conversation id fails before spawning agy, with a reason. A
+   follow-up answers with the prior turns in context.
+6. **Proof is tied to the invocation.** Every prompt the plugin sends carries the job's id as a
+   marker. When the engine reports success, the plugin opens the conversation file named by the
+   conversation id. It records the `idx` of the user-input step, as defined under Frozen
+   interfaces, whose payload
+   contains that marker, and the step count before and after the invocation (0 before, for a fresh
+   conversation). The result names the conversation id, the conversation file, that step `idx` and
+   both counts. A succeeded run carries a verification outcome, either verified or unverified. It
+   is verified when the file exists, contains the marked user-input step, and its step count is
+   larger than before the invocation. It is unverified otherwise, and the result names which of the
+   three failed. Unverified is not a fifth state. It is a property of succeeded, and the result
+   states it.
 7. **Background and foreground share one surface.** A run started in the background survives the
-   turn that started it. Its status and result are read through the same commands as a foreground
-   run's.
-8. **A forwarding subagent forwards.** The plugin ships one subagent for delegation, and its tool set
-   is the shell alone. Its transcript for a delegation holds exactly one tool call: the plugin
-   runtime, with the caller's task text preserved apart from routing flags. Its reply is the
-   runtime's output verbatim, with nothing before or after it. Its description names the engine, so
-   a model that wants a second lens picks this subagent or the Codex one on purpose.
-9. **Skills and MCP are the engine's, and setup reports which ones are loaded.** The plugin injects no
-   skills or MCP servers into agy. Setup reports whether `agy` is on the path, its version, the
-   account state, the models it lists, and the plugins and MCP servers agy has loaded. Setup
-   installs nothing and exits non-zero when `agy` is absent.
-10. **The runtime rule is ADR-014's.** Every process the plugin starts is an executable plus an argv
-    array. No runtime file names a shell or passes a command string.
+   command that started it: that command returns while the engine is still running. Its status and
+   result are read through the same commands as a foreground run's. A foreground run's record is
+   readable through those same commands after it ends.
+8. **A forwarding subagent forwards.** The plugin ships exactly one subagent, and its tool set is the
+   shell alone. Its transcript for a delegation holds exactly one tool call: the plugin runtime.
+   The routing flags are the leading run of tokens drawn from `--background`, `--wait`, `--resume`,
+   `--fresh`, `--model <value>` and `--effort <value>`. That run ends at the first token not in the
+   set, or at `--`. The routing flags go to the runtime as flags, and everything after them is the
+   task text, passed byte for byte, including any token that looks like a flag. The subagent's reply
+   is the runtime's stdout verbatim, with nothing before or after it. Its description names
+   Antigravity and does not name Codex, so a model that wants a second lens picks it on purpose.
+9. **Skills and MCP are the engine's, and setup reports which ones are loaded.** The runtime
+   never runs `agy mcp add|remove|enable|disable` or `agy plugin install|uninstall|enable|disable|import`,
+   and it passes no argument that adds a skill, plugin or MCP server to a run. Setup reports
+   whether `agy` is on the path, its version (`agy --version`), and the account state. The account
+   state is usable when `agy models` exits 0 with a model list, and unavailable otherwise, with
+   agy's message. Setup also reports the models listed, and the plugins and MCP servers that
+   `agy plugin list` and `agy mcp list` report. Setup runs only those four commands. It exits
+   non-zero and writes nothing when `agy` is absent.
+10. **The runtime rule is ADR-014's.** The runtime is zero-dependency Node `.mjs`. Every process the
+    plugin starts is an executable plus an argv array, with `shell` absent or false. No runtime file
+    names a shell or passes a command string. Each job starts exactly one agy process, and no plugin
+    process outlives the job it serves.
 11. **Hub practice, tested nowhere in this repository.** A review through this plugin is the agy
     leg of the cross-AI review practice. A raw `agy -p` from a session's shell is deprecated for the
     same reason raw `codex exec` is: no job record, no structured findings, and a proof
@@ -84,41 +133,82 @@ probes ADR-001 records before building on them.
 
 ## Acceptance
 
-Each check runs against a scratch repository with one planted defect in one file, and names the
-oracle it reads.
+**Fixture.** Each scenario gets its own new git repository with one commit holding three files:
 
-- A review leg returns a findings object whose first finding names that file and the defect. Each
-  finding carries the five fields, and the tree is byte-identical to before the run.
-- A task leg leaves the planted defect fixed, and the result carries the engine's final response
-  text. The result's conversation id names a file under agy's conversations directory whose step
-  count grew by the turn the result reports. The result reads succeeded and verified.
-- A task leg whose conversation file is removed between the engine's exit and the plugin's check
-  reads succeeded and unverified, and says why.
-- A follow-up with that id, asked what the previous turn changed, names that file. A run the
-  caller marks fresh after that follow-up gets a new conversation id.
-- A run started in the background is in state running while the engine process is alive. Its
-  result can be read after the process has exited, from a later invocation of the status and result
-  commands.
-- A cancel while the engine is alive ends the process, and the record reads cancelled.
-- Three runs each read failed with a reason, and none of them is rendered as a result: one whose
-  engine exits before a `result` event, one whose `result` status is not success, and one whose
-  schema-constrained output is not valid under the schema.
-- A run that cannot start the engine reads failed, carries the requested model and effort, and
-  says no confirmation arrived. Every other run's result names the model agy's `init` event
-  reported, which equals the one requested, and the effort the run was given.
-- The subagent is given a task with a routing flag. Its transcript has one tool call: the runtime,
-  invoked with the task text intact and the flag removed. Its reply is the runtime's stdout,
-  unchanged. Its description text names Antigravity and does not name Codex.
-- Setup on a machine without `agy` says so, exits non-zero and writes nothing. With `agy`, it
-  reports the version, the account state, the models, and the plugins and MCP servers agy lists.
-- The suite asserts that every spawn in the runtime passes an executable and an argv array, and
-  that no runtime file names a shell or passes a single command string.
+- `math.mjs`, whose `add(a, b)` returns `a - b` on line 2. This is the planted defect.
+- `strings.mjs`, a correct `upper(s)`.
+- `README.md`.
+
+**Unchanged tree.** A tree is unchanged when two things are identical before and after the run:
+`git status --porcelain --untracked-files=all --ignored`, and the SHA-256 of every file it covers
+plus every tracked file. Job records live outside the fixture repository, so they never take part in
+this comparison.
+
+**Fixed defect.** The defect is fixed when `node --input-type=module -e "import('./math.mjs').then(m=>process.exit(m.add(2,3)===5?0:1))"`
+exits 0 in the fixture.
+
+The checks:
+
+- **Review.** A review leg returns a findings object that validates against the shipped schema. Its
+  first finding's `file` resolves to the fixture's `math.mjs`, and its `line` is 2. Every finding
+  carries the five fields, and the tree is unchanged.
+- **Review proof.** The same review's result reads succeeded and verified. It names the conversation
+  file, the marked step `idx` and both step counts.
+- **Task.** A task leg leaves the defect fixed. Its result carries the engine's final response text
+  and reads succeeded and verified, and it names a conversation file under
+  `~/.gemini/antigravity-cli/conversations/` whose step count after the run exceeds the count before it.
+- **Missing conversation file.** In a separate fixture, a task leg's conversation file is removed
+  between the engine's exit and the plugin's check. The result reads succeeded and unverified, and
+  names the missing file as the reason.
+- **Turn not added.** In a separate fixture, a follow-up's conversation file is replaced, between the
+  engine's exit and the plugin's check, with the copy taken before the follow-up started. The result
+  reads succeeded and unverified, and names the absent marked step as the reason.
+- **Follow-up recall.** A task leg runs, then a follow-up on that job asks: "Which file did you
+  change in the previous turn? Answer with the path only." The follow-up's response contains
+  `math.mjs` and does not contain `strings.mjs` or `README.md`. It reuses the job's conversation id.
+  A fresh run in the same fixture gets a different conversation id.
+- **Missing conversation id.** A follow-up naming a job whose record has no conversation id reads
+  failed before any agy process is spawned.
+- **Background.** A run started in the background returns from the starting command while the engine
+  process is alive. Status reads running for as long as that process is alive. A result read during
+  that time reports running and no body. After the process exits, a later, separate invocation of
+  the status and result commands reads the terminal state. A foreground run's record reads the same
+  way through those commands.
+- **Cancel.** A cancel while the engine is alive ends the process, and the record reads cancelled. A
+  cancel on that now-terminal job leaves it cancelled.
+- **Failures.** Each of the following reads failed with its reason, and its result carries no
+  response or findings body:
+  - a run whose engine exits before a `result` event;
+  - a run whose `result.status` is not `SUCCESS`;
+  - a run whose schema-constrained output does not validate;
+  - a run whose process exits nonzero after a `SUCCESS` result;
+  - a run whose `init.model` differs from the requested model.
+- **Engine settings.** A run whose engine cannot be started reads failed, carries the requested
+  model and effort, and says no confirmation arrived. So does a run whose engine starts and exits
+  before `init`. Every run that reached `init` names `init.model`, and its recorded argv contains
+  `--model` with the requested model and `--effort` with the requested effort.
+- **Legs.** The recorded argv of a review leg contains `--mode plan` and `--json-schema`. The recorded
+  argv of a task leg contains neither `--mode plan` nor `--sandbox`. Every job records exactly one
+  agy process, and no plugin process is alive after its job is terminal.
+- **Subagent.** The plugin ships exactly one agent definition, and its tools are the shell alone. Given
+  `--background fix the --fresh parser`, its transcript has one tool call: the runtime, invoked
+  with the background flag and the task text `fix the --fresh parser`. Its reply is the runtime's
+  stdout, unchanged. Its description text names Antigravity and does not name Codex.
+- **Setup.** On a machine without `agy`, setup says so, exits non-zero and writes nothing. With `agy`,
+  it reports the version, the account state, the models, and the plugins and MCP servers that agy
+  lists. The only agy invocations it spawns are `--version`, `models`, `plugin list` and `mcp list`.
+- **Runtime rule.** The suite asserts the following:
+  - every runtime file is `.mjs`;
+  - the plugin declares no package dependency;
+  - every spawn passes an executable and an argv array, with no `shell: true`;
+  - no runtime file names a shell or passes a single command string;
+  - no runtime file spawns an agy subcommand that changes MCP servers or plugins.
 
 ## Open for this repository
 
 Decided here before or during delivery: the plugin's command names; the schema's fields beyond the
-five named; the job record's layout and location; the marketplace name; and whether the repository
-is public. The job record also needs a key of this repository's own. A job exists before the engine
-returns a conversation id, and two runs in one conversation are two jobs. The conversation id and
-the turn are therefore fields of the job, not its key, the same way the model plugin keeps job,
-thread and turn apart.
+five named; the job record's layout and its location outside the working tree; the documented
+default model and effort; the marketplace name; and whether the repository is public. A job's key
+belongs to this repository. A job exists before the engine returns a conversation id, and two runs
+in one conversation are two jobs. The conversation id and the marked step are therefore fields of
+the job, not its key.

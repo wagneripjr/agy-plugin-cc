@@ -18,8 +18,8 @@ nothing from it.
 - **One `agy` print-mode process per turn, and no broker.** Multi-turn work resumes with
   `--conversation <id>`. agy has no app-server protocol to speak to.
 - **The leg is chosen by mode, never by prompt text.** A review runs `--mode plan` with
-  `--json-schema` and an `--output-format json` findings object. A task runs in the default mode with
-  `--output-format stream-json`.
+  `--json-schema`, and its findings arrive in `result.structured_output`. A task runs in the default
+  mode. Both legs use `--output-format stream-json`.
 - **A task leg never runs under `--sandbox`.** The sandbox blocks shell writes in the workspace and
   leaves the network open.
 - **Proof comes from agy's own records.** Each conversation is one SQLite file:
