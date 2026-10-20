@@ -1,0 +1,129 @@
+#status: Draft
+[
+  {
+    "term": "delegation"
+  },
+  {
+    "term": "review"
+  },
+  {
+    "term": "task"
+  },
+  {
+    "term": "follow-up"
+  },
+  {
+    "term": "fresh-run"
+  },
+  {
+    "term": "job"
+  },
+  {
+    "term": "job-state"
+  },
+  {
+    "term": "finding"
+  },
+  {
+    "term": "findings-schema"
+  },
+  {
+    "term": "project"
+  },
+  {
+    "term": "planted-defect"
+  },
+  {
+    "term": "unchanged-tree"
+  },
+  {
+    "term": "engine"
+  },
+  {
+    "term": "engine-settings"
+  },
+  {
+    "term": "model"
+  },
+  {
+    "term": "effort"
+  },
+  {
+    "term": "model-confirmation"
+  },
+  {
+    "term": "conversation"
+  },
+  {
+    "term": "conversation-file"
+  },
+  {
+    "term": "conversation-store"
+  },
+  {
+    "term": "marked-step"
+  },
+  {
+    "term": "step-count"
+  },
+  {
+    "term": "verification"
+  },
+  {
+    "term": "background-run"
+  },
+  {
+    "term": "foreground-run"
+  },
+  {
+    "term": "cancel"
+  },
+  {
+    "term": "status"
+  },
+  {
+    "term": "result"
+  },
+  {
+    "term": "failure-reason"
+  },
+  {
+    "term": "plan-mode"
+  },
+  {
+    "term": "sandbox"
+  },
+  {
+    "term": "streamed-events"
+  },
+  {
+    "term": "engine-process"
+  },
+  {
+    "term": "subagent"
+  },
+  {
+    "term": "routing-option"
+  },
+  {
+    "term": "task-text"
+  },
+  {
+    "term": "runtime"
+  },
+  {
+    "term": "setup"
+  },
+  {
+    "term": "account-state"
+  },
+  {
+    "term": "engine-plugin"
+  },
+  {
+    "term": "mcp-server"
+  },
+  {
+    "term": "codeword"
+  }
+]
