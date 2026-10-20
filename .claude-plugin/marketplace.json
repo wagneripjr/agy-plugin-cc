@@ -1,0 +1,16 @@
+{
+  "name": "agy-plugin-cc",
+  "owner": {
+    "name": "Wagner Ignacio Pinto Junior"
+  },
+  "metadata": {
+    "description": "Antigravity (agy) as a delegation target for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "agy",
+      "description": "Delegate a review or a task to Antigravity (agy) as a tracked, resumable, verifiable job.",
+      "source": "./plugins/agy"
+    }
+  ]
+}
