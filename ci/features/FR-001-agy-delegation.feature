@@ -1,4 +1,4 @@
-#status: Draft
+#status: Approved
 @FR-001
 Feature: FR-001 Antigravity is a delegation target beside Codex
   A session hands a review or a task to Antigravity through one plugin and gets back a
