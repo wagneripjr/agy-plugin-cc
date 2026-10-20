@@ -9,8 +9,9 @@ const STDERR_KEPT = 2000;
 
 export const DEFAULT_SETTINGS = Object.freeze({ model: 'gemini-4-argon', effort: 'medium' });
 
-export function engineArgv(prompt, settings) {
-  return ['--print', prompt, '--output-format', 'stream-json', '--model', settings.model, '--effort', settings.effort];
+export function engineArgv(prompt, settings, conversationId = null) {
+  const resume = conversationId ? ['--conversation', conversationId] : [];
+  return ['--print', prompt, '--output-format', 'stream-json', '--model', settings.model, '--effort', settings.effort, ...resume];
 }
 
 function conversation(id) {
@@ -65,10 +66,14 @@ export function finalize(job, run, exit) {
   return job;
 }
 
-export function runEngine(job, prompt) {
+export function failBeforeSpawn(job, code, message) {
+  return finalize(job, { result: null, reason: ending(code, message), stderr: '' }, { code: null, signal: null });
+}
+
+export function runEngine(job, prompt, conversationId = null) {
   return new Promise((done) => {
     const run = { result: null, reason: null, stderr: '' };
-    job.argv = engineArgv(prompt, job.settings);
+    job.argv = engineArgv(prompt, job.settings, conversationId);
     writeRecord(job);
     const child = spawn(ENGINE, job.argv, { cwd: job.cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let ended = false;

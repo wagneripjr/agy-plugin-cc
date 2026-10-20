@@ -1,15 +1,15 @@
 import { readFileSync } from 'node:fs';
 
 import { parseDelegation } from './lib/args.mjs';
-import { DEFAULT_SETTINGS, runEngine } from './lib/engine.mjs';
-import { createJob, readJob } from './lib/jobs.mjs';
+import { DEFAULT_SETTINGS, failBeforeSpawn, runEngine } from './lib/engine.mjs';
+import { conversationToContinue, createJob, readJob } from './lib/jobs.mjs';
 import { renderJob } from './lib/render.mjs';
 import { renderSetup, setup } from './lib/setup.mjs';
 
 const USAGE = [
   'usage: agy-companion.mjs --version',
   '       agy-companion.mjs setup [--json]',
-  '       agy-companion.mjs task [--wait] [--model <model>] [--effort <effort>] [--json] [--] <task text>',
+  '       agy-companion.mjs task [--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] <task text>',
   '       agy-companion.mjs status|result <job-id> [--json]',
   '',
 ].join('\n');
@@ -21,10 +21,14 @@ function usage() {
 
 async function task(argv) {
   const parsed = parseDelegation(argv);
-  if (!parsed || parsed.text.trim() === '') return usage();
+  if (!parsed || parsed.text.trim() === '' || (parsed.options.fresh && parsed.options.resume !== undefined)) return usage();
   const settings = { model: parsed.options.model ?? DEFAULT_SETTINGS.model, effort: parsed.options.effort ?? DEFAULT_SETTINGS.effort };
   const job = createJob({ kind: 'task', settings, cwd: process.cwd() });
-  const finished = await runEngine(job, parsed.text);
+  const resumed = parsed.options.resume;
+  const conversationId = resumed === undefined ? null : conversationToContinue(resumed);
+  const finished = resumed !== undefined && !conversationId
+    ? failBeforeSpawn(job, 'no-conversation-to-continue', `job ${resumed} has no recorded conversation to continue`)
+    : await runEngine(job, parsed.text, conversationId);
   process.stdout.write(renderJob(finished, { json: parsed.options.json === true }));
 }
 

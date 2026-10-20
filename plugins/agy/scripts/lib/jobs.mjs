@@ -63,6 +63,10 @@ export function readJob(id) {
   }
 }
 
+export function conversationToContinue(id) {
+  return readJob(id)?.conversation?.id ?? null;
+}
+
 export function claimTerminal(id) {
   try {
     closeSync(openSync(join(jobsDir(), `${id}.terminal`), 'wx'));
