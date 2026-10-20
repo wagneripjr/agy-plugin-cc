@@ -1,7 +1,7 @@
 ---
 id: FR-001
 type: Requirement
-status: Draft
+status: Approved
 title: "FR-001: Antigravity is a delegation target beside Codex"
 description: A session hands a review or a task to agy through one plugin, and every agy leg a session runs goes through it, as a tracked, resumable, verifiable job.
 derives-from: [hub:R-121]
