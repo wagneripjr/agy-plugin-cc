@@ -4,11 +4,13 @@ import { parseDelegation } from './lib/args.mjs';
 import { DEFAULT_SETTINGS, failBeforeSpawn, runEngine } from './lib/engine.mjs';
 import { conversationToContinue, createJob, readJob } from './lib/jobs.mjs';
 import { renderJob } from './lib/render.mjs';
+import { reviewPrompt } from './lib/review.mjs';
 import { renderSetup, setup } from './lib/setup.mjs';
 
 const USAGE = [
   'usage: agy-companion.mjs --version',
   '       agy-companion.mjs setup [--json]',
+  '       agy-companion.mjs review [--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] [focus]',
   '       agy-companion.mjs task [--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] <task text>',
   '       agy-companion.mjs status|result <job-id> [--json]',
   '',
@@ -19,16 +21,17 @@ function usage() {
   process.exitCode = 2;
 }
 
-async function task(argv) {
+async function delegate(kind, argv) {
   const parsed = parseDelegation(argv);
-  if (!parsed || parsed.text.trim() === '' || (parsed.options.fresh && parsed.options.resume !== undefined)) return usage();
+  if (!parsed || (kind === 'task' && parsed.text.trim() === '') || (parsed.options.fresh && parsed.options.resume !== undefined)) return usage();
   const settings = { model: parsed.options.model ?? DEFAULT_SETTINGS.model, effort: parsed.options.effort ?? DEFAULT_SETTINGS.effort };
-  const job = createJob({ kind: 'task', settings, cwd: process.cwd() });
+  const prompt = kind === 'review' ? await reviewPrompt(process.cwd(), parsed.text.trim()) : parsed.text;
+  const job = createJob({ kind, settings, cwd: process.cwd() });
   const resumed = parsed.options.resume;
   const conversationId = resumed === undefined ? null : conversationToContinue(resumed);
   const finished = resumed !== undefined && !conversationId
     ? failBeforeSpawn(job, 'no-conversation-to-continue', `job ${resumed} has no recorded conversation to continue`)
-    : await runEngine(job, parsed.text, conversationId);
+    : await runEngine(job, prompt, conversationId);
   process.stdout.write(renderJob(finished, { json: parsed.options.json === true }));
 }
 
@@ -53,8 +56,8 @@ try {
     const report = await setup();
     process.stdout.write(rest.length > 0 ? `${JSON.stringify(report, null, 2)}\n` : renderSetup(report));
     if (!report.engine.installed) process.exitCode = 1;
-  } else if (command === 'task') {
-    await task(rest);
+  } else if (command === 'review' || command === 'task') {
+    await delegate(command, rest);
   } else if (command === 'status' || command === 'result') {
     read(command, rest);
   } else {

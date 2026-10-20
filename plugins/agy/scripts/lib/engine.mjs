@@ -4,15 +4,17 @@ import { join } from 'node:path';
 
 import { claimTerminal, readJob, writeRecord } from './jobs.mjs';
 import { marker, stepCount, unproven, verify } from './proof.mjs';
+import { FINDINGS_SCHEMA, findingsViolations } from './schema.mjs';
 
 const ENGINE = 'agy';
 const STDERR_KEPT = 2000;
 
 export const DEFAULT_SETTINGS = Object.freeze({ model: 'gemini-4-argon', effort: 'medium' });
 
-export function engineArgv(prompt, settings, conversationId = null) {
+export function engineArgv(prompt, { kind, settings }, conversationId = null) {
+  const leg = kind === 'review' ? ['--mode', 'plan', '--json-schema', FINDINGS_SCHEMA] : [];
   const resume = conversationId ? ['--conversation', conversationId] : [];
-  return ['--print', prompt, '--output-format', 'stream-json', '--model', settings.model, '--effort', settings.effort, ...resume];
+  return ['--print', prompt, '--output-format', 'stream-json', '--model', settings.model, '--effort', settings.effort, ...leg, ...resume];
 }
 
 function conversation(id) {
@@ -49,6 +51,9 @@ function observe(job, run, line) {
     run.result = event.result ?? {};
     if (run.result.status !== 'SUCCESS') {
       run.reason ??= ending('result-not-success', `agy reported a result with status ${run.result.status ?? 'none'}, not SUCCESS`);
+    } else if (job.kind === 'review') {
+      const broken = findingsViolations(run.result.structured_output);
+      if (broken.length > 0) run.reason ??= ending('schema-violated', `agy's findings broke the shipped schema: ${broken.join('; ')}`);
     }
   }
   writeRecord(job);
@@ -60,7 +65,8 @@ export function finalize(job, run, exit) {
   if (!reason && exit.code !== 0) reason = ending('nonzero-exit-after-success', withStderr(`agy ${exitDescription(exit)} after reporting success`, run.stderr));
   job.state = reason ? 'failed' : 'succeeded';
   job.reason = reason ?? null;
-  job.response = reason ? null : run.result.response ?? null;
+  job.response = reason || job.kind !== 'task' ? null : run.result.response ?? null;
+  job.findings = reason || job.kind !== 'review' ? null : run.result.structured_output;
   if (!reason) job.proof = verify(job);
   job.endedAt = new Date().toISOString();
   if (!claimTerminal(job.id)) return readJob(job.id);
@@ -75,7 +81,7 @@ export function failBeforeSpawn(job, code, message) {
 export function runEngine(job, prompt, conversationId = null) {
   return new Promise((done) => {
     const run = { result: null, reason: null, stderr: '' };
-    job.argv = engineArgv(`${prompt}\n\n${marker(job.id)}`, job.settings, conversationId);
+    job.argv = engineArgv(`${prompt}\n\n${marker(job.id)}`, job, conversationId);
     job.proof = unproven(conversationId ? stepCount(conversation(conversationId).file) : 0);
     writeRecord(job);
     const child = spawn(ENGINE, job.argv, { cwd: job.cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });

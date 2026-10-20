@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Antigravity review findings",
+  "type": "object",
+  "required": ["findings"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "claim", "evidence", "verdict"],
+        "properties": {
+          "file": { "type": "string", "minLength": 1, "description": "Repository-relative path of the file the finding is about" },
+          "line": { "type": "integer", "minimum": 1, "description": "1-based line number the finding points at" },
+          "claim": { "type": "string", "minLength": 1, "description": "What is wrong or doubtful" },
+          "evidence": { "type": "string", "minLength": 1, "description": "The code checked that supports the claim" },
+          "verdict": { "type": "string", "enum": ["defect", "risk", "question"] },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": { "type": "string" }
+  },
+  "additionalProperties": false
+}

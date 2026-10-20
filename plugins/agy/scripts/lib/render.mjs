@@ -13,6 +13,15 @@ function proofLine({ verification, unverifiedReason, markedStepIdx, stepsBefore,
   return verification === 'verified' ? `Proof: verified; ${steps}` : `Proof: unverified (${unverifiedReason}); ${steps}`;
 }
 
+function findingLines({ findings, summary }) {
+  const lines = findings.length === 0 ? ['', 'No findings.'] : findings.flatMap((finding, i) => [
+    '',
+    `${i + 1}. ${finding.file}:${finding.line} [${finding.severity ? `${finding.verdict}, ${finding.severity}` : finding.verdict}] ${finding.claim}`,
+    `   Evidence: ${finding.evidence}`,
+  ]);
+  return summary ? [...lines, '', `Summary: ${summary}`] : lines;
+}
+
 export function renderJob(job, { json = false, body = true } = {}) {
   const shown = report(job);
   if (json) return `${JSON.stringify(shown, null, 2)}\n`;
@@ -24,5 +33,6 @@ export function renderJob(job, { json = false, body = true } = {}) {
   if (shown.conversation) lines.push(`Conversation: ${shown.conversation.id} (${shown.conversation.file})`);
   if (shown.proof?.verification) lines.push(proofLine(shown.proof));
   if (body && shown.response !== null) lines.push('', shown.response);
+  if (body && shown.findings) lines.push(...findingLines(shown.findings));
   return `${lines.join('\n')}\n`;
 }
