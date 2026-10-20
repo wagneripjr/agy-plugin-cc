@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { claimTerminal, readJob, writeRecord } from './jobs.mjs';
+import { killGroup } from './process.mjs';
 import { marker, stepCount, unproven, verify } from './proof.mjs';
 import { FINDINGS_SCHEMA, findingsViolations } from './schema.mjs';
 
@@ -45,7 +46,12 @@ function observe(job, run, line) {
   if (id && !job.conversation) job.conversation = conversation(id);
   if (event.event === 'init') {
     const model = event.init?.model ?? null;
-    job.engine = { ...job.engine, model, modelConfirmation: model === job.settings.model ? 'confirmed' : 'mismatched' };
+    const matched = model === job.settings.model;
+    job.engine = { ...job.engine, model, modelConfirmation: matched ? 'confirmed' : 'mismatched' };
+    if (!matched) {
+      run.reason ??= ending('model-mismatch', `agy ran model ${model ?? 'none'}, not the requested model ${job.settings.model}`);
+      killGroup(job.pid);
+    }
   }
   if (event.event === 'result') {
     run.result = event.result ?? {};

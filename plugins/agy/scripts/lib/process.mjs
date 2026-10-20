@@ -13,3 +13,27 @@ export function runCommand(executable, argv) {
     child.on('close', (code) => resolve({ code, stdout, stderr, error: null }));
   });
 }
+
+const GRACE_MS = 3000;
+const POLL_MS = 100;
+
+function signalGroup(pid, signal) {
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch (error) {
+    if (error.code === 'ESRCH') return false;
+    throw error;
+  }
+}
+
+export function killGroup(pid) {
+  if (!signalGroup(pid, 'SIGTERM')) return;
+  const deadline = Date.now() + GRACE_MS;
+  const watch = setInterval(() => {
+    const alive = signalGroup(pid, 0);
+    if (alive && Date.now() < deadline) return;
+    clearInterval(watch);
+    if (alive) signalGroup(pid, 'SIGKILL');
+  }, POLL_MS);
+}
