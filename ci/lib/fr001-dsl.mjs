@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { InstrumentError } from './feature-runner.mjs';
-import { DRIVER_MODULES, DelegationDriver, PluginSourceDriver } from './fr001-driver-contract.mjs';
+import { DRIVER_MODULES, DelegationDriver, ENGINE_OPTIONS, PluginSourceDriver } from './fr001-driver-contract.mjs';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -39,6 +39,7 @@ export class DelegationDsl {
   #latest = null;
   #codeword = null;
   #requested = null;
+  #beforeCancel = null;
 
   constructor(driver) {
     this.#driver = driver;
@@ -116,6 +117,25 @@ export class DelegationDsl {
     return this.delegate({ leg: 'task', alias: 'follow-up', resume: 'earlier', text });
   }
 
+  async followUpOnEarlierTask() {
+    await this.earlierTask();
+    return this.followUp();
+  }
+
+  async taskOnStandIn(behaviour) {
+    await this.#driver.useStandInEngine(behaviour);
+    return this.task();
+  }
+
+  async cancelledBackgroundTask() {
+    await this.backgroundTaskStillWorking();
+    await this.cancel();
+  }
+
+  async awaitJobEnd() {
+    await this.#driver.awaitJobEnd(this.#job());
+  }
+
   async earlierTask() {
     await this.#ensureProject();
     return this.task({ alias: 'earlier' });
@@ -149,14 +169,8 @@ export class DelegationDsl {
   }
 
   async jobAlreadyFinished(state) {
-    await this.#ensureProject();
-    if (state === 'cancelled') {
-      await this.backgroundTaskStillWorking();
-      await this.cancel();
-      return;
-    }
-    await this.#driver.useStandInEngine(state === 'succeeded' ? 'completes-normally' : 'exits-before-result');
-    await this.task();
+    if (state === 'cancelled') return this.cancelledBackgroundTask();
+    return this.taskOnStandIn(state === 'succeeded' ? 'completes-normally' : 'exits-before-result');
   }
 
   async releaseEngine() {
@@ -164,6 +178,7 @@ export class DelegationDsl {
   }
 
   async cancel() {
+    this.#beforeCancel = await this.#driver.readRecord(this.#job());
     await this.#driver.cancel(this.#job());
   }
 
@@ -178,6 +193,10 @@ export class DelegationDsl {
 
   async askSubagent(request) {
     await this.#driver.askSubagent(await this.#ensureProject(), request);
+  }
+
+  async confirmFindingsAreEngineOutput() {
+    await this.#driver.confirmFindingsAreEngineOutput(this.#job());
   }
 
   async confirmFindingsSatisfySchema() {
@@ -212,9 +231,12 @@ export class DelegationDsl {
     await this.#driver.confirmResultReads(this.#job(), state);
   }
 
-  async confirmSucceededAndVerified() {
+  async confirmVerifiedByOwnTurnInNewConversation() {
     await this.confirmState('succeeded');
     await this.#driver.confirmVerified(this.#job());
+    await this.#driver.confirmPromptCarriesJobMarker(this.#job());
+    await this.#driver.confirmProofMatchesConversation(this.#job());
+    await this.#driver.confirmConversationStartedEmpty(this.#job());
   }
 
   async confirmSucceededAndUnverified(reason) {
@@ -222,38 +244,35 @@ export class DelegationDsl {
     await this.#driver.confirmUnverifiedBecause(this.#job(), reason);
   }
 
-  async confirmFailedBecause(reason) {
-    await this.#driver.confirmFailedBecause(this.#job(), reason);
+  async confirmEndedBecause(state, reason) {
+    await this.#driver.confirmStatusEndedBecause(this.#job(), state, reason);
+  }
+
+  async confirmEndedResult(state, reason) {
+    await this.#driver.confirmResultEndedBecause(this.#job(), state, reason);
+    await this.#driver.confirmResultCarriesSettings(this.#job(), this.#requested);
+    await this.#driver.confirmBodyAbsent(this.#job());
   }
 
   async confirmFailureNamesBothModels() {
-    await this.#driver.confirmFailedBecause(this.#job(), 'model-mismatch');
+    await this.#driver.confirmStatusEndedBecause(this.#job(), 'failed', 'model-mismatch');
     await this.#driver.confirmFailureNamesBothModels(this.#job());
-  }
-
-  async confirmProofNamesTurn() {
-    await this.#driver.confirmProofNamesTurn(this.#job());
   }
 
   async confirmConversationGrewInStore() {
     await this.#driver.confirmConversationGrewInStore(this.#job());
   }
 
-  async confirmCarriesResponseAndConversation() {
-    await this.#driver.confirmCarriesResponse(this.#job());
+  async confirmCarriesEngineResponseAndConversation() {
+    await this.#driver.confirmCarriesEngineResponse(this.#job());
     await this.#driver.confirmNamesConversation(this.#job());
   }
 
-  async confirmCarriesResponse() {
-    await this.#driver.confirmCarriesResponse(this.#job());
+  async confirmCarriesEngineResponse() {
+    await this.#driver.confirmCarriesEngineResponse(this.#job());
   }
 
   async confirmNoBody() {
-    await this.#driver.confirmBodyAbsent(this.#job());
-  }
-
-  async confirmSettingsAndNoBody() {
-    await this.#driver.confirmResultCarriesSettings(this.#job(), this.#requested);
     await this.#driver.confirmBodyAbsent(this.#job());
   }
 
@@ -269,12 +288,16 @@ export class DelegationDsl {
     await this.#driver.confirmSameConversation(this.#job(), this.#job('earlier'));
   }
 
+  async confirmEngineAskedToContinueEarlierConversation() {
+    await this.#driver.confirmEngineAskedToContinue(this.#job(), this.#job('earlier'));
+  }
+
   async confirmConversationOfItsOwn() {
     await this.#driver.confirmDifferentConversation(this.#job(), this.#job('earlier'));
   }
 
-  async confirmCarriesRequestedSettings() {
-    await this.#driver.confirmResultCarriesSettings(this.#job(), this.#requested);
+  async confirmEngineAskedToContinueNothing() {
+    await this.#driver.confirmEngineAskedToContinueNothing(this.#job());
   }
 
   async confirmNoConfirmationArrived() {
@@ -302,7 +325,7 @@ export class DelegationDsl {
   }
 
   async confirmOnlyDelegationOptions() {
-    await this.#driver.confirmOnlyDelegationOptions(this.#job());
+    await this.#driver.confirmOnlyDelegationOptions(this.#job(), ENGINE_OPTIONS);
   }
 
   async confirmReadOnlyWithSchema() {
@@ -327,6 +350,11 @@ export class DelegationDsl {
 
   async confirmCancelReported(state) {
     await this.#driver.confirmCancelReported(this.#job(), state);
+  }
+
+  async confirmRecordUnchangedByCancel() {
+    if (!this.#beforeCancel) throw new InstrumentError('the scenario compares a record with the one before a cancel without cancelling');
+    await this.#driver.confirmRecordMatches(this.#job(), this.#beforeCancel);
   }
 
   async confirmNoEngineStarted() {

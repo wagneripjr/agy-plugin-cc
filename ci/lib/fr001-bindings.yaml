@@ -85,7 +85,7 @@
     "term": "result"
   },
   {
-    "term": "failure-reason"
+    "term": "ending-reason"
   },
   {
     "term": "plan-mode"
@@ -125,5 +125,23 @@
   },
   {
     "term": "codeword"
+  },
+  {
+    "term": "job-record"
+  },
+  {
+    "term": "job-marker"
+  },
+  {
+    "term": "proof"
+  },
+  {
+    "term": "structured-output"
+  },
+  {
+    "term": "final-response"
+  },
+  {
+    "term": "engine-option"
   }
 ]
