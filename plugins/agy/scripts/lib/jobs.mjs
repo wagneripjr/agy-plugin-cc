@@ -85,6 +85,20 @@ export function claimRunner(id) {
   return claim(id, 'runner');
 }
 
+const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
+
+export function isTerminal(job) {
+  return TERMINAL.has(job.state);
+}
+
+export function requestCancel(id) {
+  claim(id, 'cancel');
+}
+
+export function cancelRequested(id) {
+  return existsSync(join(jobsDir(), `${id}.cancel`));
+}
+
 export function markSpawning(id) {
   writeFileSync(join(jobsDir(), `${id}.spawning`), '');
 }

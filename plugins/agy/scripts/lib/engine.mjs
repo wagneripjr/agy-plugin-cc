@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { claimTerminal, markSpawning, readJob, writeRecord } from './jobs.mjs';
+import { cancelRequested, claimTerminal, markSpawning, readJob, writeRecord } from './jobs.mjs';
 import { killGroup } from './process.mjs';
 import { marker, stepCount, unproven, verify } from './proof.mjs';
 import { FINDINGS_SCHEMA, findingsViolations } from './schema.mjs';
@@ -66,10 +66,11 @@ function observe(job, run, line) {
 }
 
 export function finalize(job, run, exit) {
-  let reason = run.reason;
+  const cancelled = cancelRequested(job.id);
+  let reason = cancelled ? ending('cancel-requested', 'the job was cancelled before agy finished') : run.reason;
   if (!reason && !run.result) reason = ending('exited-without-result', withStderr(`agy ${exitDescription(exit)} without reporting a result`, run.stderr));
   if (!reason && exit.code !== 0) reason = ending('nonzero-exit-after-success', withStderr(`agy ${exitDescription(exit)} after reporting success`, run.stderr));
-  job.state = reason ? 'failed' : 'succeeded';
+  job.state = cancelled ? 'cancelled' : reason ? 'failed' : 'succeeded';
   job.reason = reason ?? null;
   job.response = reason || job.kind !== 'task' ? null : run.result.response ?? null;
   job.findings = reason || job.kind !== 'review' ? null : run.result.structured_output;
@@ -93,6 +94,7 @@ export function prepareRun(job, prompt, conversationId = null) {
 export function runEngine(job) {
   return new Promise((done) => {
     const run = { result: null, reason: null, stderr: '' };
+    if (cancelRequested(job.id)) return done(finalize(job, run, { code: null, signal: null }));
     markSpawning(job.id);
     const child = spawn(ENGINE, job.argv, { cwd: job.cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let ended = false;

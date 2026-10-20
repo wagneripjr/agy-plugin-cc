@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { parseDelegation } from './lib/args.mjs';
 import { startInBackground } from './lib/background.mjs';
+import { cancelJob } from './lib/cancel.mjs';
 import { DEFAULT_SETTINGS, failJob, prepareRun, runEngine } from './lib/engine.mjs';
 import { claimRunner, conversationToContinue, createJob, isJobId, readJob } from './lib/jobs.mjs';
 import { renderJob } from './lib/render.mjs';
@@ -13,7 +14,7 @@ const USAGE = [
   '       agy-companion.mjs setup [--json]',
   '       agy-companion.mjs review [--background|--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] [focus]',
   '       agy-companion.mjs task [--background|--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] <task text>',
-  '       agy-companion.mjs status|result <job-id> [--json]',
+  '       agy-companion.mjs status|result|cancel <job-id> [--json]',
   '',
 ].join('\n');
 
@@ -51,14 +52,15 @@ async function runJob([id, ...extra]) {
   await runEngine(readJob(id));
 }
 
-function read(command, [id, ...flags]) {
+async function read(command, [id, ...flags]) {
   if (!id || !flags.every((flag) => flag === '--json')) return usage();
-  const job = readJob(id);
+  const { record: job, settled } = command === 'cancel' ? await cancelJob(id) : { record: readJob(id), settled: true };
   if (!job) {
     process.stderr.write(`no Antigravity job ${id}\n`);
     process.exitCode = 1;
     return;
   }
+  if (!settled) process.exitCode = 1;
   process.stdout.write(renderJob(job, { json: flags.length > 0, body: command === 'result' }));
 }
 
@@ -76,8 +78,8 @@ try {
     await delegate(command, rest);
   } else if (command === 'run-job') {
     await runJob(rest);
-  } else if (command === 'status' || command === 'result') {
-    read(command, rest);
+  } else if (command === 'status' || command === 'result' || command === 'cancel') {
+    await read(command, rest);
   } else {
     usage();
   }
