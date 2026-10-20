@@ -37,6 +37,21 @@ const DEADLINE = Object.freeze({
 });
 const POLL_MS = 100;
 const LINGER_WINDOW_MS = 5000;
+const LINGER_TOLERANCE_MS = 500;
+const LINGER_REPORT_GRACE_MS = 10_000;
+const LOOP_TICK_MS = 10;
+const LINGER_OBSERVER = join(dirname(new URL(import.meta.url).pathname), 'fr001-linger-observer.mjs');
+
+const loopTicks = { previous: Date.now(), latest: Date.now() };
+setInterval(() => {
+  loopTicks.previous = loopTicks.latest;
+  loopTicks.latest = Date.now();
+}, LOOP_TICK_MS).unref();
+
+function stamp() {
+  const at = Date.now();
+  return { at, uncertainty: at - loopTicks.previous };
+}
 
 function sleep(ms) {
   return new Promise((done) => setTimeout(done, ms));
@@ -64,8 +79,7 @@ function findExecutable(name, path, exclude = []) {
   return null;
 }
 
-function processTable() {
-  const out = spawnSync('ps', ['-A', '-o', 'pid=,ppid=,pgid=,stat=,command='], { encoding: 'utf8' }).stdout;
+function parseProcessTable(out) {
   return out.split('\n').filter(Boolean).map((line) => {
     const [pid, ppid, pgid, stat, ...command] = line.trim().split(/\s+/);
     return { pid: Number(pid), ppid: Number(ppid), pgid: Number(pgid), stat, command: command.join(' ') };
@@ -164,6 +178,7 @@ class FR001DelegationDriver {
   #setup = null;
   #subagent = null;
   #projects = [];
+  #observers = [];
 
   constructor(repoRoot) {
     this.#repoRoot = repoRoot;
@@ -312,10 +327,38 @@ class FR001DelegationDriver {
     }
   }
 
-  #observeTerminal(job, reading, at, engineAlive) {
+  #exitObservation(job) {
+    return { ...stamp(), engineAlive: this.#engineAlive(job) };
+  }
+
+  #observeTerminal(job, reading, { at, uncertainty, engineAlive }) {
     if (job.firstTerminal || !TERMINAL.has(reading?.state)) return;
-    job.firstTerminal = { at, engineAlive, state: reading.state };
-    job.lingerSnapshot = sleep(at + LINGER_WINDOW_MS - Date.now()).then(() => ({ at: Date.now(), table: processTable() }));
+    job.firstTerminal = { at, uncertainty, engineAlive, state: reading.state };
+    const dir = join(this.#work, 'linger');
+    mkdirSync(dir, { recursive: true });
+    const deadline = at + LINGER_WINDOW_MS;
+    const observer = { deadline, file: join(dir, `${this.#observers.length + 1}.json`), failure: null };
+    observer.child = spawn(process.execPath, [LINGER_OBSERVER, String(deadline), observer.file], { detached: true, stdio: 'ignore' });
+    observer.child.on('error', (error) => { observer.failure = error.message; });
+    observer.child.unref();
+    this.#observers.push(observer);
+    job.lingerObserver = observer;
+  }
+
+  async #lingerTable(job) {
+    const observer = job.lingerObserver;
+    const { deadline, file } = observer;
+    const until = deadline + LINGER_TOLERANCE_MS + LINGER_REPORT_GRACE_MS;
+    while (!existsSync(file) && !observer.failure && Date.now() < until) await sleep(POLL_MS);
+    if (!existsSync(file)) throw new InstrumentError(`no process table was observed ${LINGER_WINDOW_MS / 1000}s after job ${job.id} first read finished: ${observer.failure ?? 'the observer wrote nothing'}`);
+    const seen = JSON.parse(readFileSync(file, 'utf8'));
+    if (seen.error) throw new InstrumentError(`the process table for job ${job.id} could not be read at its deadline: ${seen.error}`);
+    if (seen.observedAt < deadline) throw new InstrumentError(`the process table for job ${job.id} was read ${deadline - seen.observedAt}ms before its deadline`);
+    const late = job.firstTerminal.uncertainty + (seen.capturedAt - deadline);
+    if (late > LINGER_TOLERANCE_MS) {
+      throw new InstrumentError(`the process table for job ${job.id} may reflect up to ${late}ms past the ${LINGER_WINDOW_MS / 1000}s mark (finish stamped within ${job.firstTerminal.uncertainty}ms, table captured ${seen.capturedAt - deadline}ms after the deadline), beyond the declared ${LINGER_TOLERANCE_MS}ms tolerance`);
+    }
+    return parseProcessTable(seen.table);
   }
 
   async createProject() {
@@ -358,14 +401,14 @@ class FR001DelegationDriver {
       env,
       cwd: project.dir,
       deadline: request.background ? DEADLINE.background : this.#engine.mode === 'installed' ? DEADLINE.delegation : DEADLINE.standInDelegation,
-      onExit: () => ({ engineAlive: this.#engineAlive(job), at: Date.now() }),
+      onExit: () => this.#exitObservation(job),
     });
     job.delegation = run;
     const report = this.#report(run, `the ${leg} delegation`);
     if (!report?.id) throw new Error(`the ${leg} delegation reported no job id: ${excerpt(run.stdout)}`);
     job.id = report.id;
     job.delegationReport = report;
-    this.#observeTerminal(job, report, run.observed.at, run.observed.engineAlive);
+    this.#observeTerminal(job, report, run.observed);
     return job;
   }
 
@@ -374,11 +417,11 @@ class FR001DelegationDriver {
       env: job.env,
       cwd: job.project.dir,
       deadline: DEADLINE.reader,
-      onExit: () => ({ engineAlive: this.#engineAlive(job), at: Date.now() }),
+      onExit: () => this.#exitObservation(job),
     });
     job.readers.push({ kind, exitedByItself: !run.timedOut, code: run.code, pid: run.pid });
     const report = this.#report(run, `the ${kind} read of job ${job.id}`);
-    this.#observeTerminal(job, report, run.observed.at, run.observed.engineAlive);
+    this.#observeTerminal(job, report, run.observed);
     return report;
   }
 
@@ -427,10 +470,10 @@ class FR001DelegationDriver {
       env: job.env,
       cwd: job.project.dir,
       deadline: DEADLINE.cancel,
-      onExit: () => ({ engineAlive: this.#engineAlive(job), at: Date.now() }),
+      onExit: () => this.#exitObservation(job),
     });
     job.lastCancel = this.#report(run, `the cancel of job ${job.id}`);
-    this.#observeTerminal(job, job.lastCancel, run.observed.at, run.observed.engineAlive);
+    this.#observeTerminal(job, job.lastCancel, run.observed);
   }
 
   async readStatus(job) {
@@ -842,7 +885,7 @@ class FR001DelegationDriver {
   async confirmNothingLeftRunning(job, afterSeconds) {
     if (afterSeconds * 1000 !== LINGER_WINDOW_MS) throw new InstrumentError(`the driver observes the process table ${LINGER_WINDOW_MS / 1000}s after a job first reads finished, not ${afterSeconds}s`);
     if (!job.firstTerminal) await this.#readTerminal(job, 'status');
-    const { table } = await job.lingerSnapshot;
+    const table = await this.#lingerTable(job);
     const engines = this.#engines(job);
     const known = new Set([job.delegation?.pid, ...engines.flatMap((engine) => [engine.pid, engine.realPid, engine.ppid])].filter((pid) => pid && pid !== process.pid && pid !== 1));
     const leaders = new Set(engines.flatMap((engine) => [engine.pid, engine.realPid, engine.ppid]).filter((pid) => pid && pid !== process.pid && pid !== 1));
@@ -1017,6 +1060,7 @@ class FR001DelegationDriver {
   }
 
   async close() {
+    for (const { child } of this.#observers) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     const engines = readEngineRecords(this.#observations);
     for (const engine of engines) if (engine.kind === 'stand-in') writeFileSync(join(this.#observations, `release-${engine.pid}`), '');
     const pids = engines.flatMap((engine) => [engine.pid, engine.realPid]).filter(Boolean);
