@@ -98,9 +98,10 @@ them if the engine moves.
    readable through those same commands after it ends.
 8. **A forwarding subagent forwards.** The plugin ships exactly one subagent, and its tool set is the
    shell alone. Its transcript for a delegation holds exactly one tool call: the plugin runtime.
-   The routing flags are the leading run of tokens drawn from `--background`, `--wait`, `--resume`,
-   `--fresh`, `--model <value>` and `--effort <value>`. That run ends at the first token not in the
-   set, or at `--`. The routing flags go to the runtime as flags, and everything after them is the
+   The routing flags are the leading run of tokens drawn from the valueless `--background`,
+   `--wait` and `--fresh`, and the value-taking `--resume <job-id>`, `--model <value>` and
+   `--effort <value>`. A value-taking flag consumes the next token as its value. The run ends at the
+   first token that is neither a flag in the set nor a value one of them consumed, or at `--`. The routing flags go to the runtime as flags, and everything after them is the
    task text, passed byte for byte, including any token that looks like a flag. The subagent's reply
    is the runtime's stdout verbatim, with nothing before or after it. Its description names
    Antigravity and does not name Codex, so a model that wants a second lens picks it on purpose.
@@ -114,8 +115,11 @@ them if the engine moves.
    non-zero and writes nothing when `agy` is absent.
 10. **The runtime rule is ADR-014's.** The runtime is zero-dependency Node `.mjs`. Every process the
     plugin starts is an executable plus an argv array, with `shell` absent or false. No runtime file
-    names a shell or passes a command string. Each job starts exactly one agy process, and no plugin
-    process outlives the job it serves.
+    names a shell or passes a command string. A job spawns at most one agy process. A job that fails
+    before spawning, such as a follow-up with no recorded conversation id, spawns none. Once a job
+    is terminal, neither its agy process nor any process the plugin started to run or wait on that
+    job is alive. Status and result invocations are readers. They are not part of any job, and they
+    exit after printing.
 11. **Hub practice, tested nowhere in this repository.** A review through this plugin is the agy
     leg of the cross-AI review practice. A raw `agy -p` from a session's shell is deprecated for the
     same reason raw `codex exec` is: no job record, no structured findings, and a proof
@@ -140,9 +144,10 @@ them if the engine moves.
 - `README.md`.
 
 **Unchanged tree.** A tree is unchanged when two things are identical before and after the run:
-`git status --porcelain --untracked-files=all --ignored`, and the SHA-256 of every file it covers
-plus every tracked file. Job records live outside the fixture repository, so they never take part in
-this comparison.
+the output of `git status --porcelain --untracked-files=all --ignored`, and the set of
+(relative path, SHA-256) pairs for every regular file under the fixture root outside `.git/`,
+walked recursively, including files inside ignored directories. Job records live outside the
+fixture repository, so they never take part in this comparison.
 
 **Fixed defect.** The defect is fixed when `node --input-type=module -e "import('./math.mjs').then(m=>process.exit(m.add(2,3)===5?0:1))"`
 exits 0 in the fixture.
@@ -163,10 +168,12 @@ The checks:
 - **Turn not added.** In a separate fixture, a follow-up's conversation file is replaced, between the
   engine's exit and the plugin's check, with the copy taken before the follow-up started. The result
   reads succeeded and unverified, and names the absent marked step as the reason.
-- **Follow-up recall.** A task leg runs, then a follow-up on that job asks: "Which file did you
-  change in the previous turn? Answer with the path only." The follow-up's response contains
-  `math.mjs` and does not contain `strings.mjs` or `README.md`. It reuses the job's conversation id.
-  A fresh run in the same fixture gets a different conversation id.
+- **Follow-up recall.** A task leg runs. Its task text also gives a codeword generated randomly for
+  this test and tells the engine not to write it anywhere, so the codeword is absent from the
+  fixture tree and its git history. A follow-up on that job asks: "What codeword did I give you in
+  the previous turn? Answer with the codeword only." The follow-up's response contains the codeword,
+  and it reuses the job's conversation id. A fresh run in the same fixture asks the same question.
+  It gets a different conversation id, and its response does not contain the codeword.
 - **Missing conversation id.** A follow-up naming a job whose record has no conversation id reads
   failed before any agy process is spawned.
 - **Background.** A run started in the background returns from the starting command while the engine
@@ -187,13 +194,19 @@ The checks:
   model and effort, and says no confirmation arrived. So does a run whose engine starts and exits
   before `init`. Every run that reached `init` names `init.model`, and its recorded argv contains
   `--model` with the requested model and `--effort` with the requested effort.
-- **Legs.** The recorded argv of a review leg contains `--mode plan` and `--json-schema`. The recorded
-  argv of a task leg contains neither `--mode plan` nor `--sandbox`. Every job records exactly one
-  agy process, and no plugin process is alive after its job is terminal.
+- **Legs.** Every recorded argv contains `--output-format stream-json`. Its only agy flags are
+  `--print`, `--output-format`, `--model`, `--effort`, `--mode`, `--json-schema` and
+  `--conversation`, so no flag adds a skill, plugin, MCP server, agent, project or directory to a
+  run. A review leg's argv contains `--mode plan` and `--json-schema`. A task leg's argv contains
+  neither `--mode plan` nor `--sandbox`.
+- **Processes.** Every job records at most one agy spawn, and the missing-conversation-id job records
+  none. Once a job is terminal, its recorded agy process id and every process the plugin started for
+  that job are no longer alive. Each status and result invocation exits after printing.
 - **Subagent.** The plugin ships exactly one agent definition, and its tools are the shell alone. Given
   `--background fix the --fresh parser`, its transcript has one tool call: the runtime, invoked
-  with the background flag and the task text `fix the --fresh parser`. Its reply is the runtime's
-  stdout, unchanged. Its description text names Antigravity and does not name Codex.
+  with the background flag and the task text `fix the --fresh parser`. Given
+  `--resume J1 --effort low what did you change`, the runtime receives resume `J1`, effort `low`,
+  and the task text `what did you change`. Its reply is the runtime's stdout, unchanged. Its description text names Antigravity and does not name Codex.
 - **Setup.** On a machine without `agy`, setup says so, exits non-zero and writes nothing. With `agy`,
   it reports the version, the account state, the models, and the plugins and MCP servers that agy
   lists. The only agy invocations it spawns are `--version`, `models`, `plugin list` and `mcp list`.
