@@ -114,8 +114,13 @@ Feature: FR-001 Antigravity is a delegation target beside Codex
       Given a project with the planted defect
       And Antigravity will report success and keep running until it is released
       When a task is delegated to Antigravity in the background
+      And Antigravity has reported success and is still running
       Then the job's status reads running
       And the job's result reads running with no body
+      And the engine is still running
+      When the engine finishes its work
+      Then a later status read shows the job succeeded
+      And the engine had exited when the job first read finished
 
     Scenario: Cancelling a running job ends its engine
       Given a background task job whose engine is still working

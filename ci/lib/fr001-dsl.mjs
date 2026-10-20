@@ -14,6 +14,7 @@ const FIX_THE_DEFECT = 'The add(a, b) function in math.mjs returns the wrong val
 const EXPLICIT_SETTINGS = Object.freeze({ model: 'gemini-4-argon', effort: 'low' });
 const CODEWORD_QUESTION = 'What codeword did I give you in the previous turn? Answer with the codeword only.';
 const LINGER_WINDOW_SECONDS = 5;
+const REPORTS_SUCCESS_WHILE_RUNNING = 'reports-success-and-works-until-released';
 
 async function loadDriver(module, contract) {
   const path = join(REPO_ROOT, module.path);
@@ -40,6 +41,8 @@ export class DelegationDsl {
   #codeword = null;
   #requested = null;
   #beforeCancel = null;
+  #behaviour = null;
+  #reportedSuccess = new Set();
 
   constructor(driver) {
     this.#driver = driver;
@@ -86,6 +89,7 @@ export class DelegationDsl {
 
   async engineWill(behaviour) {
     await this.#driver.useStandInEngine(behaviour);
+    this.#behaviour = behaviour;
   }
 
   async conversationWillBeTampered(tamper) {
@@ -173,6 +177,11 @@ export class DelegationDsl {
     return this.taskOnStandIn(state === 'succeeded' ? 'completes-normally' : 'exits-before-result');
   }
 
+  async awaitReportedSuccessWhileRunning() {
+    await this.#driver.awaitEngineReportedSuccess(this.#job());
+    this.#reportedSuccess.add(this.#job());
+  }
+
   async releaseEngine() {
     await this.#driver.releaseEngine(this.#job());
   }
@@ -223,11 +232,18 @@ export class DelegationDsl {
     await this.#driver.confirmTextNowhereInProject(this.#project, this.#codeword);
   }
 
+  #requireReportedSuccessBeforeRunningRead(state) {
+    if (state !== 'running' || this.#behaviour !== REPORTS_SUCCESS_WHILE_RUNNING || this.#reportedSuccess.has(this.#job())) return;
+    throw new InstrumentError('the scenario reads a job as running before observing that its engine reported success');
+  }
+
   async confirmState(state) {
+    this.#requireReportedSuccessBeforeRunningRead(state);
     await this.#driver.confirmStatusReads(this.#job(), state);
   }
 
   async confirmResultState(state) {
+    this.#requireReportedSuccessBeforeRunningRead(state);
     await this.#driver.confirmResultReads(this.#job(), state);
   }
 
@@ -342,6 +358,10 @@ export class DelegationDsl {
 
   async confirmEngineStopped() {
     await this.#driver.confirmEngineStopped(this.#job());
+  }
+
+  async confirmEngineStillRunning() {
+    await this.#driver.confirmEngineRunning(this.#job());
   }
 
   async confirmReadersExited() {

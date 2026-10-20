@@ -122,6 +122,7 @@ export const delegationSteps = [
   When(/^a follow-up on that job asks for the codeword$/, (dsl) => dsl.askForCodeword({ resumes: 'earlier' })),
   When(/^a run that (.+) asks for the codeword in the same project$/, (dsl, phrase) =>
     dsl.askForCodeword({ resumes: lookup(NOT_RESUMING, phrase, 'way of not resuming') })),
+  When(/^Antigravity has reported success and is still running$/, (dsl) => dsl.awaitReportedSuccessWhileRunning()),
   When(/^the engine finishes its work$/, (dsl) => dsl.releaseEngine()),
   When(/^the job's status and result are read$/, (dsl) => dsl.readStatusAndResult()),
   When(/^the job is cancelled$/, (dsl) => dsl.cancel()),
@@ -164,6 +165,7 @@ export const delegationSteps = [
   }),
   Then(/^each read finished on its own after printing$/, (dsl) => dsl.confirmReadersExited()),
   Then(/^the engine is no longer running$/, (dsl) => dsl.confirmEngineStopped()),
+  Then(/^the engine is still running$/, (dsl) => dsl.confirmEngineStillRunning()),
   Then(/^the cancel reports the job as (running|succeeded|failed|cancelled)$/, (dsl, state) => dsl.confirmCancelReported(state)),
   Then(/^the job's status and result read exactly as they did before the cancel$/, (dsl) => dsl.confirmRecordUnchangedByCancel()),
   Then(/^the result says no confirmation arrived from the engine$/, (dsl) => dsl.confirmNoConfirmationArrived()),

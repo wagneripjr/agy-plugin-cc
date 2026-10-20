@@ -36,6 +36,16 @@ export const STAND_IN_BEHAVIOURS = Object.freeze([
   'account-unavailable',
 ]);
 
+export const STAND_IN_DEFINITIONS = Object.freeze({
+  'reports-success-and-works-until-released': 'Emits an init event naming the model the job requested, then a final result event whose status is SUCCESS, then emits nothing further and keeps its process alive until releaseEngine; once released it exits 0.',
+});
+
+export const OBSERVATION_ORDER = Object.freeze({
+  engineReportedSuccess: "awaitEngineReportedSuccess resolves only after the driver has itself read a result event whose status is SUCCESS from the engine's own event stream, independently of the plugin's record, and found the engine process alive at that moment; it rejects when the engine exits first or a deadline passes.",
+  freshReads: 'Every status or result confirmation starts a new status or result invocation at the moment it is called and never answers from a reading taken earlier, so a confirmation called after awaitEngineReportedSuccess resolved reads the record as it stands after the engine reported success.',
+  engineStillRunning: 'confirmEngineRunning inspects the engine process at the moment it is called; called after the reads, it shows the engine stayed alive across them.',
+});
+
 export const CONVERSATION_TAMPERS = Object.freeze([
   'remove-conversation-file',
   'restore-conversation-from-before-the-turn',
@@ -84,6 +94,7 @@ export const DelegationDriver = Object.freeze({
   useStandInEngine: '(behaviour: StandInBehaviour) => Promise<void>',
   useInstalledEngineThen: '(tamper: ConversationTamper) => Promise<void>',
   releaseEngine: '(job: JobHandle) => Promise<void>',
+  awaitEngineReportedSuccess: '(job: JobHandle) => Promise<void>',
   awaitJobEnd: '(job: JobHandle) => Promise<void>',
   close: '() => Promise<void>',
 
@@ -139,6 +150,7 @@ export const DelegationDriver = Object.freeze({
 
   confirmReturnedWhileEngineWorking: '(job: JobHandle) => Promise<void>',
   confirmEngineStopped: '(job: JobHandle) => Promise<void>',
+  confirmEngineRunning: '(job: JobHandle) => Promise<void>',
   confirmReadersExited: '(job: JobHandle) => Promise<void>',
   confirmCancelReported: '(job: JobHandle, state: JobState) => Promise<void>',
   confirmNoEngineStarted: '(job: JobHandle) => Promise<void>',
