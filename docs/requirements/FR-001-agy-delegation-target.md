@@ -1,7 +1,7 @@
 ---
 id: FR-001
 type: Requirement
-status: Approved
+status: Draft
 title: "FR-001: Antigravity is a delegation target beside Codex"
 description: A session hands a review or a task to agy through one plugin, and every agy leg a session runs goes through it, as a tracked, resumable, verifiable job.
 derives-from: [hub:R-121]
@@ -139,7 +139,11 @@ them if the engine moves.
 
 ## Acceptance
 
-**Fixture.** Each scenario gets its own new git repository with one commit holding three files:
+**Fixture.** Each engine run gets its own new git repository. A scenario that only checks facts of
+one kind of run (task, review, follow-up or background) may check a run of that kind made once per
+suite invocation. A scenario whose check mutates or depends on its own run gets a run of its own:
+the unchanged-tree, tamper, recall and fresh-versus-follow-up checks. Each repository has one commit
+holding three files:
 
 - `math.mjs`, whose `add(a, b)` returns `a - b` on line 2. This is the planted defect.
 - `strings.mjs`, a correct `upper(s)`.
