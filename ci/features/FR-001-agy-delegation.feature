@@ -7,7 +7,9 @@ Feature: FR-001 Antigravity is a delegation target beside Codex
   A project is a new git repository with one commit holding math.mjs, whose add(a, b) returns
   a - b on line 2 (the planted defect), a correct strings.mjs, and a README.md. Every scenario
   that delegates runs in a project of its own, except as below. Antigravity is the installed
-  engine unless a scenario says otherwise.
+  engine unless a scenario says otherwise. Every run on the installed engine names the suite's
+  own model and effort, a Gemini Flash model at low effort, so the plugin's documented default
+  is checked only on a stand-in engine.
 
   A scenario tagged @shared-run checks facts of one kind of run on the installed engine: a
   review, a task, a follow-up on an earlier task, or a task in the background. Each of those

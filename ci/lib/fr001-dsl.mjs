@@ -11,7 +11,8 @@ export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', 
 
 const PLANTED_DEFECT = Object.freeze({ file: 'math.mjs', line: 2 });
 const FIX_THE_DEFECT = 'The add(a, b) function in math.mjs returns the wrong value. Fix it so that it returns the sum of a and b.';
-const EXPLICIT_SETTINGS = Object.freeze({ model: 'gemini-4-argon', effort: 'low' });
+const EXPLICIT_SETTINGS = Object.freeze({ model: 'gemini-3.8-flash', effort: 'low' });
+const REAL_ENGINES = new Set(['installed', 'tampered']);
 const CODEWORD_QUESTION = 'What codeword did I give you in the previous turn? Answer with the codeword only.';
 const LINGER_WINDOW_SECONDS = 5;
 const REPORTS_SUCCESS_WHILE_RUNNING = 'reports-success-and-works-until-released';
@@ -151,10 +152,11 @@ export class DelegationDsl {
 
   async delegate({ leg = 'task', alias = leg, text, background = false, foreground = false, resume, fresh = false, settings } = {}) {
     const project = await this.#ensureProject();
-    this.#requested = settings ?? null;
+    const named = settings ?? (REAL_ENGINES.has(this.#engine) ? EXPLICIT_SETTINGS : null);
+    this.#requested = named;
     const request = { project, leg, text: text ?? (leg === 'task' ? FIX_THE_DEFECT : undefined), background, foreground, fresh };
     if (resume) request.resume = this.#job(resume);
-    if (settings) request.settings = settings;
+    if (named) request.settings = named;
     return this.#remember(alias, await this.#driver.delegate(request));
   }
 

@@ -1,4 +1,4 @@
-//status: Approved
+//status: Draft
 export const DRIVER_MODULES = Object.freeze({
   delegation: Object.freeze({ path: 'ci/drivers/fr001-delegation-driver.mjs', factory: 'createDelegationDriver' }),
   pluginSource: Object.freeze({ path: 'ci/drivers/fr001-plugin-source-driver.mjs', factory: 'createPluginSourceDriver' }),
@@ -11,7 +11,7 @@ export const FACTORY_SIGNATURES = Object.freeze({
 
 export const ACCEPTANCE_DEFINITIONS = Object.freeze({
   source: 'docs/requirements/FR-001-agy-delegation-target.md, section Acceptance; the driver measures each definition exactly as written there',
-  fixture: 'Each scenario gets its own new git repository with one commit holding three files: math.mjs, whose add(a, b) returns a - b on line 2 (the planted defect); strings.mjs, a correct upper(s); README.md.',
+  fixture: 'Each engine run gets its own new git repository. A scenario that only checks facts of one kind of run (task, review, follow-up or background) may check a run of that kind made once per suite invocation. A scenario whose check mutates or depends on its own run gets a run of its own: the unchanged-tree, tamper, recall and fresh-versus-follow-up checks. Each repository has one commit holding three files: math.mjs, whose add(a, b) returns a - b on line 2 (the planted defect); strings.mjs, a correct upper(s); README.md.',
   unchangedTree: 'A tree is unchanged when two things are identical before and after the run: the output of `git status --porcelain --untracked-files=all --ignored`, and the set of (relative path, SHA-256) pairs for every regular file under the fixture root outside `.git/`, walked recursively, including files inside ignored directories. Job records live outside the fixture repository, so they never take part in this comparison.',
   fixedDefect: `The defect is fixed when node --input-type=module -e "import('./math.mjs').then(m=>process.exit(m.add(2,3)===5?0:1))" exits 0 in the fixture.`,
   conversationStore: 'A conversation is the SQLite file ~/.gemini/antigravity-cli/conversations/<conversation_id>.db. Its steps table is keyed by idx, and a user-input step has step_type 14 with the prompt text readable inside its step_payload.',
