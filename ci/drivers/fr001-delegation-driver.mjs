@@ -24,18 +24,19 @@ const FIXTURE = Object.freeze({
   'README.md': '# Fixture\n\nA small module pair used to exercise delegation.\n',
 });
 const DEADLINE = Object.freeze({
-  delegation: 15 * 60_000,
-  standInDelegation: 60_000,
-  background: 120_000,
-  reader: 30_000,
-  cancel: 60_000,
-  setup: 120_000,
-  subagent: 300_000,
-  jobEnd: 15 * 60_000,
-  engineRecord: 30_000,
-  successReport: 120_000,
+  delegation: 240_000,
+  standInDelegation: 15_000,
+  background: 15_000,
+  reader: 15_000,
+  cancel: 15_000,
+  setup: 60_000,
+  subagent: 120_000,
+  jobEnd: 240_000,
+  engineRecord: 15_000,
+  successReport: 15_000,
 });
 const POLL_MS = 100;
+const LINGER_WINDOW_MS = 5000;
 
 function sleep(ms) {
   return new Promise((done) => setTimeout(done, ms));
@@ -314,6 +315,7 @@ class FR001DelegationDriver {
   #observeTerminal(job, reading, at, engineAlive) {
     if (job.firstTerminal || !TERMINAL.has(reading?.state)) return;
     job.firstTerminal = { at, engineAlive, state: reading.state };
+    job.lingerSnapshot = sleep(at + LINGER_WINDOW_MS - Date.now()).then(() => ({ at: Date.now(), table: processTable() }));
   }
 
   async createProject() {
@@ -838,13 +840,12 @@ class FR001DelegationDriver {
   }
 
   async confirmNothingLeftRunning(job, afterSeconds) {
+    if (afterSeconds * 1000 !== LINGER_WINDOW_MS) throw new InstrumentError(`the driver observes the process table ${LINGER_WINDOW_MS / 1000}s after a job first reads finished, not ${afterSeconds}s`);
     if (!job.firstTerminal) await this.#readTerminal(job, 'status');
-    const wait = job.firstTerminal.at + afterSeconds * 1000 - Date.now();
-    if (wait > 0) await sleep(wait);
+    const { table } = await job.lingerSnapshot;
     const engines = this.#engines(job);
     const known = new Set([job.delegation?.pid, ...engines.flatMap((engine) => [engine.pid, engine.realPid, engine.ppid])].filter((pid) => pid && pid !== process.pid && pid !== 1));
     const leaders = new Set(engines.flatMap((engine) => [engine.pid, engine.realPid, engine.ppid]).filter((pid) => pid && pid !== process.pid && pid !== 1));
-    const table = processTable();
     const byPid = new Map(table.map((row) => [row.pid, row]));
     const descends = (row) => {
       for (let hop = byPid.get(row.ppid), guard = 0; hop && guard < 64; hop = byPid.get(hop.ppid), guard += 1) if (known.has(hop.pid)) return true;

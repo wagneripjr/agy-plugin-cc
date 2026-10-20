@@ -190,7 +190,7 @@ async function runScenario(scenario, bindings, createWorld) {
   return verdict;
 }
 
-export async function runFeature({ featurePath, bindings, createWorld, select = () => true, out = process.stdout }) {
+export async function runFeature({ featurePath, bindings, createWorld, select = () => true, out = process.stdout, concurrency = 1 }) {
   const counts = { passed: 0, failed: 0, errored: 0 };
   let scenarios;
   try {
@@ -200,13 +200,29 @@ export async function runFeature({ featurePath, bindings, createWorld, select = 
     counts.errored = 1;
     scenarios = [];
   }
-  for (const scenario of scenarios) {
-    const verdict = await runScenario(scenario, bindings, createWorld);
-    counts[verdict.outcome] += 1;
-    const label = { passed: 'PASS', failed: 'FAIL', errored: 'ERROR' }[verdict.outcome];
-    out.write(`${label} ${scenario.rule ? `${scenario.rule} > ` : ''}${scenario.name}\n`);
-    if (verdict.outcome !== 'passed') out.write(`     at: ${verdict.step}\n     ${verdict.message}\n`);
-  }
+  if (!Number.isInteger(concurrency) || concurrency < 1) throw new InstrumentError(`concurrency must be a positive integer, not ${concurrency}`);
+  const verdicts = new Array(scenarios.length);
+  let printed = 0;
+  const printInFeatureOrder = () => {
+    for (; printed < scenarios.length && verdicts[printed]; printed += 1) {
+      const scenario = scenarios[printed];
+      const verdict = verdicts[printed];
+      counts[verdict.outcome] += 1;
+      const label = { passed: 'PASS', failed: 'FAIL', errored: 'ERROR' }[verdict.outcome];
+      out.write(`${label} ${scenario.rule ? `${scenario.rule} > ` : ''}${scenario.name}\n`);
+      if (verdict.outcome !== 'passed') out.write(`     at: ${verdict.step}\n     ${verdict.message}\n`);
+    }
+  };
+  let next = 0;
+  const worker = async () => {
+    while (next < scenarios.length) {
+      const index = next;
+      next += 1;
+      verdicts[index] = await runScenario(scenarios[index], bindings, createWorld);
+      printInFeatureOrder();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, scenarios.length) }, worker));
   out.write(`=== RESULTS: ${counts.passed} passed, ${counts.failed} failed, ${counts.errored} errored ===\n`);
   return counts;
 }

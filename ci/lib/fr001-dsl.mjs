@@ -1,4 +1,4 @@
-//status: Approved
+//status: Draft
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -29,12 +29,35 @@ async function loadDriver(module, contract) {
   return driver;
 }
 
+const SHARED_RUNS = new Map();
+
+const RUN_OF_KIND = Object.freeze({
+  review: (dsl) => dsl.review(),
+  task: (dsl) => dsl.task(),
+  'follow-up': (dsl) => dsl.followUpOnEarlierTask(),
+  background: (dsl) => dsl.task({ background: true }),
+});
+
+export async function closeSharedRuns() {
+  const hosts = [...SHARED_RUNS.values()].map((shared) => shared.host);
+  SHARED_RUNS.clear();
+  for (const host of hosts) await (await host.catch(() => null))?.close();
+}
+
+function lookupRun(kind) {
+  if (!Object.hasOwn(RUN_OF_KIND, kind)) throw new InstrumentError(`the vocabulary has no kind of run called "${kind}"`);
+  return RUN_OF_KIND[kind];
+}
+
 function mintCodeword() {
   return `KESTREL-${randomBytes(4).toString('hex').toUpperCase()}`;
 }
 
 export class DelegationDsl {
+  #own;
   #driver;
+  #sharesRuns;
+  #engine = 'installed';
   #project = null;
   #jobs = new Map();
   #latest = null;
@@ -44,18 +67,40 @@ export class DelegationDsl {
   #behaviour = null;
   #reportedSuccess = new Set();
 
-  constructor(driver) {
+  constructor(driver, { sharesRuns = false } = {}) {
+    this.#own = driver;
     this.#driver = driver;
+    this.#sharesRuns = sharesRuns;
   }
 
-  static async create() {
+  static async create(options) {
     const driver = await loadDriver(DRIVER_MODULES.delegation, DelegationDriver);
     await driver.useInstalledEngine();
-    return new DelegationDsl(driver);
+    return new DelegationDsl(driver, options);
   }
 
   async close() {
-    await this.#driver.close();
+    await this.#own.close();
+  }
+
+  async runOfKind(kind) {
+    const run = lookupRun(kind);
+    if (!this.#sharesRuns || this.#engine !== 'installed') return run(this);
+    if (!SHARED_RUNS.has(kind)) {
+      const host = DelegationDsl.create();
+      SHARED_RUNS.set(kind, { host, ran: host.then(run) });
+    }
+    const shared = SHARED_RUNS.get(kind);
+    await shared.ran;
+    this.#adopt(await shared.host);
+  }
+
+  #adopt(host) {
+    this.#driver = host.#driver;
+    this.#project = host.#project;
+    this.#jobs = host.#jobs;
+    this.#latest = host.#latest;
+    this.#requested = host.#requested;
   }
 
   #job(alias = 'latest') {
@@ -81,19 +126,27 @@ export class DelegationDsl {
 
   async engineInstalled() {
     await this.#driver.useInstalledEngine();
+    this.#engine = 'installed';
   }
 
   async engineNotInstalled() {
     await this.#driver.useAbsentEngine();
+    this.#engine = 'absent';
   }
 
   async engineWill(behaviour) {
-    await this.#driver.useStandInEngine(behaviour);
+    await this.#useStandIn(behaviour);
     this.#behaviour = behaviour;
+  }
+
+  async #useStandIn(behaviour) {
+    await this.#driver.useStandInEngine(behaviour);
+    this.#engine = 'stand-in';
   }
 
   async conversationWillBeTampered(tamper) {
     await this.#driver.useInstalledEngineThen(tamper);
+    this.#engine = 'tampered';
   }
 
   async delegate({ leg = 'task', alias = leg, text, background = false, foreground = false, resume, fresh = false, settings } = {}) {
@@ -127,7 +180,7 @@ export class DelegationDsl {
   }
 
   async taskOnStandIn(behaviour) {
-    await this.#driver.useStandInEngine(behaviour);
+    await this.#useStandIn(behaviour);
     return this.task();
   }
 
@@ -161,14 +214,14 @@ export class DelegationDsl {
   }
 
   async jobWithoutConversation() {
-    await this.#driver.useStandInEngine('exits-before-confirming-model');
+    await this.#useStandIn('exits-before-confirming-model');
     await this.#ensureProject();
     return this.task({ alias: 'earlier' });
   }
 
   async backgroundTaskStillWorking() {
     await this.#ensureProject();
-    await this.#driver.useStandInEngine('works-until-released');
+    await this.#useStandIn('works-until-released');
     return this.task({ background: true });
   }
 

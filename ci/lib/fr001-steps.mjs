@@ -1,4 +1,4 @@
-//status: Approved
+//status: Draft
 import { Given, InstrumentError, Then, When } from './feature-runner.mjs';
 
 const MISBEHAVIOUR = Object.freeze({
@@ -77,19 +77,19 @@ function routingOf(phrase) {
 }
 
 const RUN = Object.freeze({
-  'a review': (dsl) => dsl.review(),
-  'a task': (dsl) => dsl.task(),
+  'a review': (dsl) => dsl.runOfKind('review'),
+  'a task': (dsl) => dsl.runOfKind('task'),
   'a task to fix the planted defect': (dsl) => dsl.task(),
   'a follow-up on that job': (dsl) => dsl.followUp(),
-  'a follow-up on an earlier task': (dsl) => dsl.followUpOnEarlierTask(),
-  'a task in the background': (dsl) => dsl.task({ background: true }),
+  'a follow-up on an earlier task': (dsl) => dsl.runOfKind('follow-up'),
+  'a task in the background': (dsl) => dsl.runOfKind('background'),
 });
 
 const JOB_TO_ITS_END = Object.freeze({
-  'a review': (dsl) => dsl.review(),
-  'a task': (dsl) => dsl.task(),
-  'a follow-up on an earlier task': (dsl) => dsl.followUpOnEarlierTask(),
-  'a task in the background': (dsl) => dsl.task({ background: true }),
+  'a review': (dsl) => dsl.runOfKind('review'),
+  'a task': (dsl) => dsl.runOfKind('task'),
+  'a follow-up on an earlier task': (dsl) => dsl.runOfKind('follow-up'),
+  'a task in the background': (dsl) => dsl.runOfKind('background'),
   'a task whose engine exits before reporting a result': (dsl) => dsl.taskOnStandIn('exits-before-result'),
   'a task whose engine runs a different model and keeps working': (dsl) => dsl.taskOnStandIn('runs-another-model-and-keeps-working'),
   'a background task cancelled while its engine works': (dsl) => dsl.cancelledBackgroundTask(),

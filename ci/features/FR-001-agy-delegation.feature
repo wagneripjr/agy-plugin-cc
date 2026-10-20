@@ -1,13 +1,18 @@
-#status: Approved
+#status: Draft
 @FR-001
 Feature: FR-001 Antigravity is a delegation target beside Codex
   A session hands a review or a task to Antigravity through one plugin and gets back a
   tracked, resumable, verifiable job.
 
-  Every scenario that delegates gets its own new project: a git repository with one commit
-  holding math.mjs, whose add(a, b) returns a - b on line 2 (the planted defect), a correct
-  strings.mjs, and a README.md. Antigravity is the installed engine unless a scenario says
-  otherwise.
+  A project is a new git repository with one commit holding math.mjs, whose add(a, b) returns
+  a - b on line 2 (the planted defect), a correct strings.mjs, and a README.md. Every scenario
+  that delegates runs in a project of its own, except as below. Antigravity is the installed
+  engine unless a scenario says otherwise.
+
+  A scenario tagged @shared-run checks facts of one kind of run on the installed engine: a
+  review, a task, a follow-up on an earlier task, or a task in the background. Each of those
+  kinds runs once per suite run, in a project of its own, and every tagged scenario of that
+  kind checks that one run. A tagged row that sets how the engine behaves runs on its own.
 
   Rule: A review returns findings, never prose, and cannot write
 
@@ -206,6 +211,7 @@ Feature: FR-001 Antigravity is a delegation target beside Codex
 
   Rule: Two legs, chosen by mode, never sandboxed, and nothing added to the engine
 
+    @shared-run
     Scenario Outline: Every run asks the engine for streamed events, the job's settings and nothing else
       Given a project with the planted defect
       When <a run> is delegated to Antigravity
@@ -221,11 +227,13 @@ Feature: FR-001 Antigravity is a delegation target beside Codex
         | a follow-up on an earlier task |
         | a task in the background       |
 
+    @shared-run
     Scenario: A review runs the engine read-only with the shipped findings schema
       Given a project with the planted defect
       When a review is delegated to Antigravity
       Then the engine ran in plan mode with the shipped findings schema
 
+    @shared-run
     Scenario: A task runs the engine in its default mode, never sandboxed
       Given a project with the planted defect
       When a task is delegated to Antigravity
@@ -233,6 +241,7 @@ Feature: FR-001 Antigravity is a delegation target beside Codex
 
   Rule: One engine process per job, and nothing left behind
 
+    @shared-run
     Scenario Outline: A job starts at most one engine and leaves nothing running once it ends
       Given a project with the planted defect
       When <a job> runs to its end
