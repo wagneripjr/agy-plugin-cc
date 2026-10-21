@@ -76,6 +76,12 @@
     "term": "symbolic-link"
   },
   {
+    "term": "unrelated-sibling"
+  },
+  {
+    "term": "relinked-directory"
+  },
+  {
     "term": "filesystem-root"
   },
   {

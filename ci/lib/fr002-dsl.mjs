@@ -26,10 +26,12 @@ const PLACES = Object.freeze({
   'a subdirectory of the outside directory': { kind: 'subdirectory', of: 'the outside directory' },
   'a sibling of the outside directory whose name begins with its name': { kind: 'prefix-sibling', of: 'the outside directory' },
   'a symbolic link to the outside directory': { kind: 'symlink', of: 'the outside directory' },
+  'a directory beside the outside directory': { kind: 'unrelated-sibling', of: 'the outside directory' },
   'the filesystem root': { kind: 'filesystem-root' },
 });
 
 const REMOVABLE = Object.freeze(['subdirectory', 'prefix-sibling']);
+const RELINKABLE = Object.freeze(['unrelated-sibling']);
 
 export const STORES = Object.freeze({
   "the session's job store": 'session',
@@ -69,6 +71,7 @@ function mintMarker() {
 export class ListingDsl {
   #driver;
   #places = new Map();
+  #relinked = new Map();
   #jobs = [];
   #nextInstant = FIRST_INSTANT;
   #marking = false;
@@ -153,6 +156,25 @@ export class ListingDsl {
       if (!REMOVABLE.includes(PLACES[alias].kind)) throw new InstrumentError(`the scenario removes ${alias}, which is not a place that can be removed`);
       await this.#driver.removePlace(this.#places.get(alias));
     }
+  }
+
+  async relinkNewestJobPlace(targetAlias) {
+    const alias = this.#jobs.at(-1)?.alias;
+    if (!alias) throw new InstrumentError('the scenario replaces a job\'s directory before creating any job');
+    if (!RELINKABLE.includes(PLACES[alias].kind)) throw new InstrumentError(`the scenario replaces ${alias} with a link, which is not a place that can be replaced`);
+    const target = await this.#place(targetAlias);
+    await this.#driver.relinkPlace(this.#places.get(alias), target);
+    this.#relinked.set(alias, targetAlias);
+  }
+
+  async #checkRecordedLinks() {
+    for (const job of this.#jobs.filter(({ alias }) => this.#relinked.has(alias))) {
+      await this.#driver.checkRecordedThroughLink(job.handle, this.#places.get(job.alias));
+    }
+  }
+
+  #directoryOf(job) {
+    return this.#places.get(this.#relinked.get(job.alias) ?? job.alias);
   }
 
   async releaseHeld() {
@@ -242,7 +264,7 @@ export class ListingDsl {
       'the jobs created in the workspace': () => within(['the workspace']),
       'the jobs created in the first repository': () => within(['the first repository']),
       'the jobs created in the outside directory and its subdirectory': () => within(['the outside directory', 'a subdirectory of the outside directory']),
-      'the jobs created in the outside directory, directly or through a symbolic link to it': () => within(['the outside directory', 'a symbolic link to the outside directory']),
+      'the jobs created in the directory now linked to the outside directory': () => within(['a directory beside the outside directory']),
       "the jobs created in the session's job store": () => inStore('session'),
       'the jobs created in the default job store': () => inStore('default'),
     };
@@ -268,6 +290,7 @@ export class ListingDsl {
 
   async confirmListsExactly(phrase) {
     const expected = this.#selection(phrase).map((job) => job.handle);
+    await this.#checkRecordedLinks();
     await this.#bothForms(this.#listing(), async (reading) => {
       await this.#driver.confirmExitStatus(reading, EXIT_STATUS.listed);
       await this.#driver.confirmListsExactly(reading, expected);
@@ -290,7 +313,8 @@ export class ListingDsl {
   }
 
   async confirmDirectoriesGiven() {
-    const jobs = this.#jobs.map((job) => ({ job: job.handle, place: this.#places.get(job.alias) }));
+    const jobs = this.#jobs.map((job) => ({ job: job.handle, place: this.#directoryOf(job) }));
+    await this.#checkRecordedLinks();
     await this.#bothForms(this.#listing(), (reading) => this.#driver.confirmDirectoriesGiven(reading, jobs));
   }
 

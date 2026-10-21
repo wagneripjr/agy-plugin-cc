@@ -38,6 +38,7 @@ export const listingSteps = [
     dsl.createTiedJobs('the workspace')),
   Given(/^twelve jobs were created alternately in the first and the second repository$/, (dsl) =>
     dsl.createAlternately(['the first repository', 'the second repository'], 12)),
+  Given(/^that directory was then replaced by a symbolic link to (.+)$/, (dsl, target) => dsl.relinkNewestJobPlace(target)),
   Given(/^the job store holds no job$/, () => {}),
   Given(/^every job's prompt carries a marker of its own, which the engine quotes back$/, (dsl) => dsl.markPrompts()),
 

@@ -111,14 +111,16 @@ Feature: FR-002 Status with no job id lists jobs, and result with no job id show
       And the jobs are listed from a symbolic link to the outside directory
       Then the listings from the outside directory and from the symbolic link to it are identical
 
-    Scenario: A job created through a symbolic link belongs to the directory the link points to
-      Given a job was created in a symbolic link to the outside directory
+    Scenario: A job whose directory has since become a symbolic link belongs to the directory the link points to
+      Given a job was created in a directory beside the outside directory
+      And that directory was then replaced by a symbolic link to the outside directory
       And a job was created in a sibling of the outside directory whose name begins with its name
       When the jobs are listed from the outside directory
-      Then the listing shows exactly the jobs created in the outside directory, directly or through a symbolic link to it, newest first
+      Then the listing shows exactly the jobs created in the directory now linked to the outside directory, newest first
 
-    Scenario: Across every workspace, a job created through a symbolic link gives the directory the link points to
-      Given a job was created in a symbolic link to the outside directory
+    Scenario: Across every workspace, a job whose directory has since become a symbolic link gives the directory the link points to
+      Given a job was created in a directory beside the outside directory
+      And that directory was then replaced by a symbolic link to the outside directory
       When the jobs of every workspace are listed from the outside directory
       Then every entry gives its job's directory
 
