@@ -204,8 +204,9 @@ export const delegationSteps = [
     dsl.confirmEngineHoldsNothingOfTheSession()),
   Then(/^the engine's environment keeps the search path and home directory the session runs with$/, (dsl) =>
     dsl.confirmEngineKeepsWhatItRunsWith()),
-  Then(/^no file in the job store holds the task text or the codeword of any job$/, (dsl) => dsl.confirmJobStoreHoldsNoPromptText()),
+  Then(/^no file in the job store ever held the prompt, the task text or the codeword of any job$/, (dsl) => dsl.confirmJobStoreNeverHeldAPrompt()),
   Then(/^every job's record keeps its prompt only as the prompt's digest$/, (dsl) => dsl.confirmEveryPromptKeptAsDigest()),
+  Then(/^every task reached the engine with the text it was delegated$/, (dsl) => dsl.confirmEveryTaskReachedEngineAsDelegated()),
   Then(/^the job started at most one engine$/, (dsl) => dsl.confirmAtMostOneEngine()),
   Then(/^the engine had exited when the job first read finished$/, (dsl) => dsl.confirmEngineGoneAtFinish()),
   Then(/^five seconds after the job first read finished, nothing the plugin started for the job is still running$/, (dsl) => dsl.confirmNothingLeftRunning()),

@@ -296,12 +296,13 @@ Feature: FR-001 Antigravity is a delegation target beside Codex
   Rule: The job store keeps no prompt text
 
     @BUG-001
-    Scenario Outline: The job store keeps every job's prompt only as its digest
+    Scenario Outline: The job store never holds a job's prompt, yet every task reaches the engine as delegated
       Given Antigravity will complete its work normally
       And a task job that was told a secret codeword and asked not to write it anywhere
       When <a run> is delegated to Antigravity
-      Then no file in the job store holds the task text or the codeword of any job
+      Then no file in the job store ever held the prompt, the task text or the codeword of any job
       And every job's record keeps its prompt only as the prompt's digest
+      And every task reached the engine with the text it was delegated
 
       Examples:
         | a run                    |

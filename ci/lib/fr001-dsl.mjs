@@ -401,11 +401,21 @@ export class DelegationDsl {
     return this.#delegated;
   }
 
-  async confirmJobStoreHoldsNoPromptText() {
+  async confirmJobStoreNeverHeldAPrompt() {
     const delegated = this.#requireDelegations();
     for (const { job } of delegated) await this.#driver.awaitJobEnd(job);
     const texts = [...delegated.map(({ text }) => text), this.#codeword].filter(Boolean);
-    await this.#driver.confirmJobStoreHoldsNone(texts);
+    await this.#driver.confirmJobStoreNeverHeld(delegated.map(({ job }) => job), texts);
+  }
+
+  async confirmEveryTaskReachedEngineAsDelegated() {
+    const tasks = this.#requireDelegations().filter(({ text }) => text);
+    if (tasks.length === 0) throw new InstrumentError('the scenario delegated no job with task text of its own');
+    for (const { job, text } of tasks) {
+      await this.#driver.awaitJobEnd(job);
+      await this.#driver.confirmPromptCarriesJobMarker(job);
+      await this.#driver.confirmEngineReceivedTaskText(job, text);
+    }
   }
 
   async confirmEveryPromptKeptAsDigest() {
