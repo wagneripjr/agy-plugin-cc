@@ -184,8 +184,9 @@ The checks:
   It gets a different conversation id. Its conversation file held 0 steps before it started, and that
   file holds no user-input step carrying the earlier job's marker. The fresh run's response is not
   checked, because an unsandboxed engine can find the codeword on disk (ADR-002).
-- **Stored prompts.** After every run in the suite, no file in the job store contains the task text
-  or the codeword of any job.
+- **Stored prompts.** After a review, a task, a follow-up and a background task, no file in the job
+  store contains any job's prompt text, and each recorded argv carries the prompt only as its
+  SHA-256 digest. A stored engine response may quote the prompt, so responses are not checked.
 - **Missing conversation id.** A follow-up naming a job whose record has no conversation id reads
   failed before any agy process is spawned.
 - **Background.** A run started in the background returns from the starting command while the engine

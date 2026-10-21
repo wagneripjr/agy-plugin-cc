@@ -34,12 +34,15 @@ running as the same user from reading files that user can read.
 1. **Allowlisted environment.** The runtime starts every agy process with an explicit environment
    built from an allowlist: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`, `LANG` and `LC_*`.
    On agy 1.4.3, `HOME` alone suffices for print mode, because agy signs in from files under `HOME`.
-2. **Values are screened, not just names.** Any allowlisted entry whose value contains the value of
-   a `CLAUDE_*` or `CODEX_*` setting of the runtime's own environment is dropped. `PATH` and `HOME`
-   are needed unchanged, so if either contains such a value the job fails before spawn, with a
-   reason. They are never rewritten.
+2. **Values are screened, not just names.** A protected value is the value of a `CLAUDE_*` or
+   `CODEX_*` setting of the runtime's own environment that is at least 8 characters long. Shorter
+   values, such as Claude Code's `CLAUDE_CODE_ENTRYPOINT=cli` or `=1` flags, carry no path or session
+   identity and would match almost any `PATH`, so they are not screened. Any allowlisted entry whose
+   value contains a protected value is dropped. `PATH` and `HOME` are needed unchanged, so if either
+   contains a protected value the job fails before spawn, with a reason. They are never rewritten.
 3. **The job store holds no prompt text.** The recorded argv keeps the prompt argument as its
-   SHA-256 digest.
+   SHA-256 digest. The prompt reaches the detached background worker without passing through the
+   job store, for example on the worker's stdin.
 4. **Disk reads are accepted residual risk.** A task leg can still read anything the operator's user
    can read, including `~/.claude`, the job store's metadata and other temp directories. This plugin
    does not prevent that, and FR-001's checks do not depend on the engine refraining from it.
