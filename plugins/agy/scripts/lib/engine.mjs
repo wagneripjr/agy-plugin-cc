@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -89,20 +90,35 @@ export function failJob(job, code, message) {
   return finalize(job, { result: null, reason: ending(code, message), stderr: '' }, { code: null, signal: null });
 }
 
-export function prepareRun(job, prompt, conversationId = null) {
-  job.argv = engineArgv(`${prompt}\n\n${marker(job.id)}`, job, conversationId);
-  job.proof = unproven(conversationId ? stepCount(conversation(conversationId).file) : 0);
-  writeRecord(job);
+function promptDigest(prompt) {
+  return `sha256:${createHash('sha256').update(prompt).digest('hex')}`;
 }
 
-export function runEngine(job) {
+function promptPosition(argv) {
+  return argv.indexOf('--print') + 1;
+}
+
+export function prepareRun(job, prompt, conversationId = null) {
+  const enginePrompt = `${prompt}\n\n${marker(job.id)}`;
+  const argv = engineArgv(enginePrompt, job, conversationId);
+  job.argv = argv.with(promptPosition(argv), promptDigest(enginePrompt));
+  job.proof = unproven(conversationId ? stepCount(conversation(conversationId).file) : 0);
+  writeRecord(job);
+  return enginePrompt;
+}
+
+export function runEngine(job, prompt) {
   return new Promise((done) => {
     const run = { result: null, reason: null, stderr: '' };
     if (cancelRequested(job.id)) return done(finalize(job, run, { code: null, signal: null }));
+    const at = promptPosition(job.argv);
+    if (job.argv[at] !== promptDigest(prompt)) {
+      return done(failJob(job, 'engine-could-not-start', `the prompt handed to the job's worker does not match the digest ${job.argv[at]} in the job's record, so agy was not started`));
+    }
     const { env, refused } = engineEnvironment();
     if (refused) return done(failJob(job, 'session-value-in-path-or-home', sessionValueMessage(refused)));
     markSpawning(job.id);
-    const child = spawn(ENGINE, job.argv, { cwd: job.cwd, detached: true, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(ENGINE, job.argv.with(at, prompt), { cwd: job.cwd, detached: true, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let ended = false;
     const end = (exit) => {
       if (ended) return;

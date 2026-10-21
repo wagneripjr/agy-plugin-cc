@@ -39,17 +39,24 @@ async function delegate(kind, argv) {
 }
 
 async function start(job, prompt, conversationId, background) {
-  prepareRun(job, prompt, conversationId);
-  if (!background) return runEngine(job);
-  const { record, settled } = await startInBackground(job);
+  const enginePrompt = prepareRun(job, prompt, conversationId);
+  if (!background) return runEngine(job, enginePrompt);
+  const { record, settled } = await startInBackground(job, enginePrompt);
   if (!settled) process.exitCode = 1;
   return record;
 }
 
+async function promptFromStdin() {
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 async function runJob([id, ...extra]) {
   if (!isJobId(id) || extra.length > 0) return usage();
+  const prompt = await promptFromStdin();
   if (!claimRunner(id)) return;
-  await runEngine(readJob(id));
+  await runEngine(readJob(id), prompt);
 }
 
 async function read(command, [id, ...flags]) {

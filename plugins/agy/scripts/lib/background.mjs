@@ -62,8 +62,10 @@ async function takeover(id, worker, workerExit, workerExited) {
   return settled(failJob(record, 'engine-could-not-start', "the job's worker ended before it started agy"));
 }
 
-export async function startInBackground(job) {
-  const worker = spawn(process.execPath, [COMPANION, 'run-job', job.id], { detached: true, stdio: 'ignore' });
+export async function startInBackground(job, prompt) {
+  const worker = spawn(process.execPath, [COMPANION, 'run-job', job.id], { detached: true, stdio: ['pipe', 'ignore', 'ignore'] });
+  worker.stdin.on('error', () => {});
+  worker.stdin.end(prompt);
   let workerExited = false;
   const workerExit = new Promise((done) => {
     worker.once('exit', done);
