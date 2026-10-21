@@ -4,7 +4,9 @@ type: Bug
 status: OPEN
 title: The agy engine inherits the runtime's whole environment, so a task leg can read stored prompts and the operator's transcript path
 description: The runtime spawns agy with no env option, so the unsandboxed task leg inherits CLAUDE_PLUGIN_DATA and CODEX_COMPANION_TRANSCRIPT_PATH and used them to read earlier jobs' prompts.
+home: FR-001
 requirements: [FR-001]
+specs: [ci/features/FR-001-agy-delegation.feature, ci/test-fr001-acceptance.mjs]
 adrs: [ADR-001]
 ---
 # BUG-001: The agy engine inherits the runtime's whole environment, so a task leg can read stored prompts and the operator's transcript path
