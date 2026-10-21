@@ -18,7 +18,8 @@ Feature: FR-001 Antigravity is a delegation target beside Codex
 
   Every delegation is made from a session like the one Claude Code gives a plugin's commands:
   its settings name the plugin's data, the plugin's root, the session's transcript and the
-  session's id.
+  session's id, and it carries further Claude Code and Codex settings whose names are new on
+  every suite run, so nothing can know them in advance.
 
   Rule: A review returns findings, never prose, and cannot write
 

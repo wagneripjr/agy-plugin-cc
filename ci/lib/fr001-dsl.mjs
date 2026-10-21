@@ -57,6 +57,14 @@ function lookupRun(kind) {
   return RUN_OF_KIND[kind];
 }
 
+const SESSION_OF_THIS_RUN = sessionOfThisRun();
+
+function sessionOfThisRun() {
+  const mint = () => randomBytes(6).toString('hex').toUpperCase();
+  const sentinels = Object.fromEntries(SESSION_ENVIRONMENT.forbiddenPrefixes.map((prefix) => [`${prefix}${mint()}`, `sentinel-${mint()}`]));
+  return Object.freeze({ ...SESSION_ENVIRONMENT, sentinels: Object.freeze(sentinels) });
+}
+
 function mintCodeword() {
   return `KESTREL-${randomBytes(4).toString('hex').toUpperCase()}`;
 }
@@ -84,7 +92,7 @@ export class DelegationDsl {
   static async create(options) {
     const driver = await loadDriver(DRIVER_MODULES.delegation, DelegationDriver);
     await driver.useInstalledEngine();
-    await driver.useSessionEnvironment(SESSION_ENVIRONMENT);
+    await driver.useSessionEnvironment(SESSION_OF_THIS_RUN);
     return new DelegationDsl(driver, options);
   }
 
@@ -416,7 +424,7 @@ export class DelegationDsl {
   }
 
   async confirmEngineHoldsNothingOfTheSession() {
-    await this.#driver.confirmEngineEnvironmentOmitsSession(this.#job(), SESSION_ENVIRONMENT);
+    await this.#driver.confirmEngineEnvironmentOmitsSession(this.#job(), SESSION_OF_THIS_RUN);
   }
 
   async confirmEngineKeepsWhatItRunsWith() {
