@@ -7,4 +7,4 @@ allowed-tools: Bash(node:*)
 
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/agy-companion.mjs" cancel $ARGUMENTS`
 
-Present the command output to the user as it stands.
+Present the command output to the user as it stands. `/agy:status` lists the job ids.

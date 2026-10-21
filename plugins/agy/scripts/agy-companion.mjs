@@ -103,6 +103,9 @@ try {
     process.stdout.write(renderListing(await listJobs({ all, cwd: process.cwd() }), { json: rest.includes('--json'), all }));
   } else if (command === 'result' && rest.every((arg) => arg === '--json')) {
     await latestResult(rest);
+  } else if (command === 'cancel' && rest.every((arg) => arg === '--json')) {
+    process.stderr.write('cancel needs a job id; run status to list your agy jobs and their ids\n');
+    process.exitCode = 2;
   } else if (command === 'status' || command === 'result' || command === 'cancel') {
     await read(command, rest);
   } else {
