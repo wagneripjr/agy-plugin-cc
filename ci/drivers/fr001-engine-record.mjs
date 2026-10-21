@@ -17,7 +17,7 @@ export class EngineRecord {
     const dir = engineDir(observations);
     this.#path = join(dir, `${process.pid}.json`);
     this.#eventsPath = join(dir, `${process.pid}.events.ndjson`);
-    this.#data = { pid: process.pid, ppid: process.ppid, startedAt: Date.now(), argv: process.argv.slice(2), cwd: process.cwd(), ...data };
+    this.#data = { pid: process.pid, ppid: process.ppid, startedAt: Date.now(), argv: process.argv.slice(2), cwd: process.cwd(), env: { ...process.env }, ...data };
     this.#flush();
   }
 

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -177,6 +177,7 @@ class FR001DelegationDriver {
   #home;
   #realAgy;
   #engine = { mode: 'installed', tamper: null };
+  #session = {};
   #windows = [];
   #setup = null;
   #subagent = null;
@@ -227,6 +228,22 @@ class FR001DelegationDriver {
     this.#engine = { mode: 'installed', tamper };
   }
 
+  async useSessionEnvironment(session) {
+    const id = randomUUID();
+    const transcript = join(this.#work, 'session', `${id}.jsonl`);
+    mkdirSync(dirname(transcript), { recursive: true });
+    writeFileSync(transcript, `${JSON.stringify({ type: 'user', sessionId: id, message: { role: 'user', content: 'delegate to Antigravity' } })}\n`);
+    const known = {
+      CLAUDE_PLUGIN_DATA: this.#data,
+      CLAUDE_PLUGIN_ROOT: join(this.#repoRoot, PLUGIN_ROOT),
+      CODEX_COMPANION_TRANSCRIPT_PATH: transcript,
+      CODEX_COMPANION_SESSION_ID: id,
+    };
+    const unknown = session.planted.filter((name) => !(name in known));
+    if (unknown.length > 0) throw new InstrumentError(`the driver does not know how Claude Code sets ${unknown.join(', ')}`);
+    this.#session = { ...Object.fromEntries(session.planted.map((name) => [name, known[name]])), ...session.sentinels };
+  }
+
   #engineEnv() {
     const engine = this.#engine;
     if (engine.mode === 'installed' && !engine.path) {
@@ -240,7 +257,7 @@ class FR001DelegationDriver {
       engine.path = [bin, process.env.PATH].join(delimiter);
       engine.home = process.env.HOME;
     }
-    const env = { ...process.env, PATH: engine.path, HOME: engine.home, [PLUGIN_DATA_ENV]: this.#data };
+    const env = { ...process.env, PATH: engine.path, HOME: engine.home, [PLUGIN_DATA_ENV]: this.#data, ...this.#session };
     delete env.NODE_OPTIONS;
     return env;
   }
@@ -842,6 +859,44 @@ class FR001DelegationDriver {
     const engine = await this.#requireEngine(job);
     if (optionValue(engine.argv, 'mode') === 'plan') throw new Error('Antigravity ran a task in plan mode');
     if (hasOption(engine.argv, 'sandbox')) throw new Error('Antigravity ran a task in its sandbox');
+  }
+
+  async #engineEnvironments(job) {
+    await this.#requireEngine(job);
+    const engines = this.#engines(job);
+    const unrecorded = engines.filter((engine) => !engine.env);
+    if (unrecorded.length > 0) throw new InstrumentError(`Antigravity process ${unrecorded.map((engine) => engine.pid).join(', ')} for job ${job.id} recorded no environment`);
+    return engines.map((engine) => engine.env);
+  }
+
+  async confirmEngineEnvironmentOmitsSession(job, session) {
+    const planted = this.#session;
+    const watched = [...session.forbiddenValues, ...Object.keys(session.sentinels)].map((name) => {
+      if (!planted[name]) throw new InstrumentError(`the session planted no value under ${name}, so the engine cannot be checked for it`);
+      return [name, planted[name]];
+    });
+    const offences = new Set();
+    for (const env of await this.#engineEnvironments(job)) {
+      for (const [name, value] of Object.entries(env)) {
+        const prefix = session.forbiddenPrefixes.find((candidate) => name.startsWith(candidate));
+        if (prefix) offences.add(`${name} is named as a ${prefix}* setting of the session`);
+        for (const [source, planted] of watched) {
+          if (String(value).includes(planted)) offences.add(`${name} holds the session's ${source} value`);
+        }
+      }
+    }
+    if (offences.size > 0) throw new Error(`Antigravity's environment for job ${job.id} carries the delegating session's settings:\n       ${[...offences].join('\n       ')}`);
+  }
+
+  async confirmEngineEnvironmentKeeps(job, kept) {
+    const problems = new Set();
+    for (const env of await this.#engineEnvironments(job)) {
+      for (const name of kept) {
+        if (!(name in env)) problems.add(`${name} is absent`);
+        else if (env[name] !== job.env[name]) problems.add(`${name} was changed`);
+      }
+    }
+    if (problems.size > 0) throw new Error(`Antigravity's environment for job ${job.id} lost what the session runs with: ${[...problems].join('; ')}`);
   }
 
   async confirmReturnedWhileEngineWorking(job) {
