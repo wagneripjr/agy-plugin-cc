@@ -1,8 +1,8 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, watch, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { InstrumentError } from '../lib/feature-runner.mjs';
@@ -44,6 +44,12 @@ const LINGER_TOLERANCE_MS = 500;
 const LINGER_REPORT_GRACE_MS = 10_000;
 const LOOP_TICK_MS = 10;
 const LINGER_OBSERVER = join(dirname(new URL(import.meta.url).pathname), 'fr001-linger-observer.mjs');
+const STORE_RECORDER = join(dirname(new URL(import.meta.url).pathname), 'fr001-store-recorder.mjs');
+const STORE_WATCH_START_MS = 200;
+const STORE_WATCH_QUIET_MS = 300;
+const STORE_WATCH_SETTLE_MS = 3000;
+const FORBIDDEN_RUN = 24;
+const NAMES_SHOWN = 6;
 
 const loopTicks = { previous: Date.now(), latest: Date.now() };
 setInterval(() => {
@@ -116,6 +122,40 @@ function walkFiles(root, skip = () => false) {
   return out.sort();
 }
 
+function jsonEscaped(text) {
+  return JSON.stringify(text).slice(1, -1);
+}
+
+function bothForms(text) {
+  return [...new Set([text, jsonEscaped(text)])];
+}
+
+function runsOf(text) {
+  if (text.length <= FORBIDDEN_RUN) return [text];
+  const runs = new Set([text]);
+  for (let i = 0; i + FORBIDDEN_RUN <= text.length; i += 1) runs.add(text.slice(i, i + FORBIDDEN_RUN));
+  return [...runs];
+}
+
+function occurrences(content, needle) {
+  const found = [];
+  for (let at = content.indexOf(needle); at !== -1; at = content.indexOf(needle, at + 1)) found.push(at);
+  return found;
+}
+
+function regularFiles(root) {
+  const out = [];
+  const visit = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile()) out.push(path);
+    }
+  };
+  if (existsSync(root)) visit(root);
+  return out;
+}
+
 function git(cwd, args) {
   return spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', maxBuffer: 64 << 20 });
 }
@@ -178,6 +218,14 @@ class FR001DelegationDriver {
   #realAgy;
   #engine = { mode: 'installed', tamper: null };
   #session = {};
+  #carried = [];
+  #recorder;
+  #runtimePids = new Set();
+  #storeWatch = null;
+  #storeSeen = new Set();
+  #storeWatchFailure = null;
+  #storeLastEvent = 0;
+  #driverMade = new Set();
   #windows = [];
   #setup = null;
   #subagent = null;
@@ -193,6 +241,8 @@ class FR001DelegationDriver {
     this.#home = join(this.#work, 'home');
     for (const dir of [this.#observations, this.#data, this.#home]) mkdirSync(dir, { recursive: true });
     this.#realAgy = findExecutable('agy', process.env.PATH ?? '');
+    const settings = new URLSearchParams({ observations: this.#observations, store: this.#data, plugin: join(repoRoot, PLUGIN_ROOT) });
+    this.#recorder = `--import=${pathToFileURL(STORE_RECORDER).href}?${settings}`;
   }
 
   #safePath(extra = []) {
@@ -242,6 +292,42 @@ class FR001DelegationDriver {
     const unknown = session.planted.filter((name) => !(name in known));
     if (unknown.length > 0) throw new InstrumentError(`the driver does not know how Claude Code sets ${unknown.join(', ')}`);
     this.#session = { ...Object.fromEntries(session.planted.map((name) => [name, known[name]])), ...session.sentinels };
+    this.#watchStore();
+    await sleep(STORE_WATCH_START_MS);
+  }
+
+  #watchStore() {
+    if (this.#storeWatch) return;
+    this.#storeWatch = watch(this.#data, { recursive: true, persistent: false }, (event, name) => {
+      this.#storeLastEvent = Date.now();
+      this.#storeSeen.add(name === null ? null : join(this.#data, String(name)));
+    });
+    this.#storeWatch.on('error', (error) => { this.#storeWatchFailure = error.message; });
+  }
+
+  #carriedDirectory(value) {
+    const dir = existsSync(value) && statSync(value).isDirectory()
+      ? mkdtempSync(join(value, 'carried-'))
+      : join(this.#work, `carried-${randomBytes(3).toString('hex')}-${value}`);
+    mkdirSync(dir, { recursive: true });
+    this.#driverMade.add(dir);
+    return dir;
+  }
+
+  async useSessionValueIn(setting, carrying) {
+    const value = this.#session[carrying];
+    if (!value) throw new InstrumentError(`the session planted no value under ${carrying}, so no setting can carry it`);
+    if (setting === 'locale') {
+      const name = `LC_FR001${randomBytes(4).toString('hex').toUpperCase()}`;
+      const locale = `locale-${value}-set`;
+      this.#carried.push((env) => { env[name] = locale; });
+      return;
+    }
+    const dir = this.#carriedDirectory(value);
+    if (setting === 'temporary-directory') this.#carried.push((env) => { env.TMPDIR = dir; });
+    else if (setting === 'search-path') this.#carried.push((env) => { env.PATH = [env.PATH, dir].join(delimiter); });
+    else if (setting === 'home') this.#carried.push((env) => { env.HOME = dir; });
+    else throw new InstrumentError(`the driver does not know the setting ${setting}`);
   }
 
   #engineEnv() {
@@ -259,6 +345,7 @@ class FR001DelegationDriver {
     }
     const env = { ...process.env, PATH: engine.path, HOME: engine.home, [PLUGIN_DATA_ENV]: this.#data, ...this.#session };
     delete env.NODE_OPTIONS;
+    for (const carry of this.#carried) carry(env);
     return env;
   }
 
@@ -301,10 +388,11 @@ class FR001DelegationDriver {
     return this.#enginePids(job).some(alive);
   }
 
-  #run(args, { env, cwd, deadline, input, onExit = () => {}, executable = process.execPath, prefix = [this.#runtime] }) {
+  #run(args, { env, cwd, deadline, input, onExit = () => {}, executable = process.execPath, prefix = [this.#recorder, this.#runtime] }) {
     return new Promise((done) => {
       const startedAt = Date.now();
       const child = spawn(executable, [...prefix, ...args], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+      if (prefix[0] === this.#recorder && child.pid) this.#runtimePids.add(child.pid);
       let stdout = '';
       let stderr = '';
       let timedOut = false;
@@ -632,7 +720,22 @@ class FR001DelegationDriver {
     const id = report.conversation?.id;
     if (!id) throw new Error(`job ${job.id}'s result names no conversation`);
     if (engine.storeBefore?.includes(`${id}.db`)) throw new Error(`the conversation ${id} that job ${job.id} names existed before the run`);
+    if (!report.proof) throw new Error(`job ${job.id} reads ${report.state}${report.reason ? ` because ${report.reason.code} ("${excerpt(report.reason.message, 300)}")` : ''}, so it reports no steps before its turn`);
     if (report.proof?.stepsBefore !== 0) throw new Error(`job ${job.id} reports ${report.proof?.stepsBefore} steps before its turn in a new conversation, not 0`);
+  }
+
+  async confirmConversationHoldsNoTurnOf(job, earlier) {
+    const report = await this.#terminalResult(job);
+    const file = report.conversation?.file;
+    if (!report.conversation?.id || !file) throw new Error(`job ${job.id}'s result names no conversation`);
+    let steps;
+    try {
+      steps = readSteps(file);
+    } catch (error) {
+      throw new Error(`the conversation file ${file} that job ${job.id} names cannot be read: ${error.message}`);
+    }
+    const turns = steps.filter((step) => step.step_type === USER_INPUT_STEP && Buffer.from(step.step_payload ?? []).includes(earlier.id));
+    if (turns.length > 0) throw new Error(`job ${job.id}'s conversation ${report.conversation.id} holds the earlier job ${earlier.id}'s turn at step ${turns.map((step) => step.idx).join(', ')}`);
   }
 
   async confirmConversationGrewInStore(job) {
@@ -644,6 +747,147 @@ class FR001DelegationDriver {
     const before = this.#observedBefore(engine, report.conversation.id);
     const after = stepCount(file);
     if (before === null || !(after > before)) throw new Error(`the conversation file ${file} held ${before ?? 'an unobserved number of'} steps before the run and ${after} after it`);
+  }
+
+  #enginePrompt(engine, job) {
+    const prompt = optionValue(engine.argv, 'print');
+    if (prompt === undefined) throw new Error(`Antigravity received no prompt for job ${job.id}`);
+    return prompt;
+  }
+
+  async confirmEngineReceivedTaskText(job, text) {
+    const prompt = this.#enginePrompt(await this.#requireEngine(job), job);
+    if (!prompt.includes(text)) throw new Error(`the prompt Antigravity received for job ${job.id} lacks the task text the job was delegated with`);
+  }
+
+  #storedRecord(job) {
+    for (const file of regularFiles(this.#data).filter((path) => path.endsWith('.json'))) {
+      try {
+        const record = JSON.parse(readFileSync(file, 'utf8'));
+        if (record?.id === job.id && Object.hasOwn(record, 'argv')) return record;
+      } catch {}
+    }
+    return null;
+  }
+
+  async confirmRecordKeepsPromptAsDigest(job) {
+    await this.#readTerminal(job, 'status');
+    const engine = await this.#requireEngine(job);
+    const prompt = this.#enginePrompt(engine, job);
+    const received = engine.argv;
+    const flag = received.findIndex((token) => token === '--print' || token.startsWith('--print='));
+    const position = received[flag] === '--print' ? flag + 1 : flag;
+    const record = this.#storedRecord(job);
+    if (!record) throw new Error(`the job store holds no record of job ${job.id} with an argv`);
+    if (!Array.isArray(record.argv)) throw new Error(`job ${job.id}'s record holds no argv`);
+    const problems = [];
+    if (record.argv.length !== received.length) problems.push(`its argv has ${record.argv.length} elements where Antigravity received ${received.length}`);
+    received.forEach((token, i) => {
+      if (i !== position && record.argv[i] !== token) problems.push(`element ${i} differs from what Antigravity received`);
+    });
+    const kept = record.argv[position];
+    const digest = createHash('sha256').update(prompt, 'utf8').digest('hex');
+    if (kept === prompt) problems.push(`element ${position} is the prompt itself`);
+    else if (typeof kept !== 'string' || !kept.includes(digest)) problems.push(`element ${position} does not carry the prompt's SHA-256 digest`);
+    if (problems.length > 0) throw new Error(`job ${job.id}'s record does not keep its prompt only as the prompt's digest: ${problems.join('; ')}`);
+  }
+
+  async #settleStoreWatch() {
+    const until = Date.now() + STORE_WATCH_SETTLE_MS;
+    while (Date.now() - this.#storeLastEvent < STORE_WATCH_QUIET_MS && Date.now() < until) await sleep(POLL_MS);
+  }
+
+  #storeLog() {
+    const dir = join(this.#observations, 'store-writes');
+    const entries = [];
+    const problems = [];
+    for (const name of existsSync(dir) ? readdirSync(dir) : []) {
+      const source = Number.parseInt(name, 10);
+      for (const line of readFileSync(join(dir, name), 'utf8').split('\n').filter(Boolean)) {
+        try {
+          entries.push({ source, ...JSON.parse(line) });
+        } catch {
+          problems.push(`the write record of runtime process ${source} holds an unreadable entry`);
+        }
+      }
+    }
+    return { entries, problems };
+  }
+
+  #storeProblems(entries) {
+    const problems = [];
+    const rel = (path) => relative(this.#data, path) || '.';
+    const recorded = new Set(entries.filter((entry) => entry.type === 'process').map((entry) => entry.source));
+    for (const pid of this.#runtimePids) if (!recorded.has(pid)) problems.push(`runtime process ${pid}, started by the driver, left no record of its writes`);
+    for (const entry of entries) {
+      if (entry.type === 'gap') problems.push(`runtime process ${entry.source} could not observe its ${entry.what}`);
+      if (entry.type !== 'spawn' || !entry.pid) continue;
+      if (entry.node && !recorded.has(entry.pid)) problems.push(`process ${entry.pid}, which runtime process ${entry.source} started as ${entry.file}, left no record of its writes`);
+      if (entry.script) problems.push(`runtime process ${entry.source} started ${entry.file} directly as process ${entry.pid}, so its writes could not be observed`);
+    }
+    if (this.#storeWatchFailure) problems.push(`the job store could not be watched: ${this.#storeWatchFailure}`);
+    if (!this.#storeWatch) problems.push('the job store was never watched');
+    const writes = entries.filter((entry) => entry.type === 'write');
+    const named = new Set(writes.flatMap((entry) => [entry.path, entry.to]).filter(Boolean));
+    for (const path of this.#storeSeen) {
+      if (path === null) {
+        problems.push('the job store watcher reported a change without naming the file');
+        continue;
+      }
+      if (path === this.#data || named.has(path) || this.#driverMade.has(path)) continue;
+      const exists = existsSync(path);
+      if (exists && statSync(path).isDirectory()) continue;
+      if (!exists && basename(path) === basename(this.#data)) continue;
+      problems.push(`${rel(path)} appeared under the job store (${exists ? 'still there' : 'since removed'}) without its bytes being observed`);
+    }
+    const contents = [];
+    for (const entry of writes) {
+      const target = entry.to ?? entry.path;
+      if (typeof entry.data === 'string') contents.push({ file: entry.path, content: entry.data });
+      if (typeof entry.after === 'string') contents.push({ file: target, content: entry.after });
+    }
+    for (const file of regularFiles(this.#data)) {
+      const content = readFileSync(file).toString('utf8');
+      if (!contents.some((seen) => seen.file === file && seen.content === content)) problems.push(`${rel(file)} holds bytes the driver did not observe being written`);
+      contents.push({ file, content });
+    }
+    return { problems, contents };
+  }
+
+  async confirmJobStoreNeverHeld(jobs, texts) {
+    for (const job of jobs) await this.#readTerminal(job, 'status');
+    const needles = [];
+    const responses = [];
+    for (const job of jobs) {
+      const engine = await this.#requireEngine(job);
+      for (const needle of bothForms(this.#enginePrompt(engine, job))) needles.push({ needle, label: `job ${job.id}'s prompt` });
+      const response = this.#engineResult(engine)?.response;
+      if (typeof response === 'string' && response !== '') responses.push(...bothForms(response));
+    }
+    texts.forEach((text, i) => {
+      const owner = jobs.find((job) => job.request?.text === text);
+      const label = owner ? `job ${owner.id}'s task text` : `given text ${i + 1}`;
+      for (const run of runsOf(text)) for (const needle of bothForms(run)) needles.push({ needle, label });
+    });
+    await this.#settleStoreWatch();
+    const log = this.#storeLog();
+    const { problems, contents } = this.#storeProblems(log.entries);
+    problems.unshift(...log.problems);
+    const offences = new Map();
+    const scanned = new Set();
+    for (const { file, content } of contents) {
+      const key = `${file}\0${content}`;
+      if (scanned.has(key)) continue;
+      scanned.add(key);
+      const shielded = responses.flatMap((response) => occurrences(content, response).map((at) => [at, at + response.length]));
+      for (const { needle, label } of needles) {
+        const exposed = occurrences(content, needle).some((at) => !shielded.some(([from, to]) => at >= from && at + needle.length <= to));
+        if (exposed) offences.set(file, new Set([...(offences.get(file) ?? []), label]));
+      }
+    }
+    const held = [...offences].map(([file, labels]) => `${relative(this.#data, file)} (${existsSync(file) ? 'still there' : 'since removed'}) held ${[...labels].join(', ')}`);
+    const lines = [...problems, ...held];
+    if (lines.length > 0) throw new Error(`the job store held or may have held prompt text:\n       ${lines.join('\n       ')}`);
   }
 
   async confirmFindingsAreEngineOutput(job) {
@@ -750,11 +994,6 @@ class FR001DelegationDriver {
   async confirmAnswerContains(job, text) {
     const answer = await this.#answer(job);
     if (!answer.includes(text)) throw new Error(`job ${job.id}'s answer does not contain "${text}": ${excerpt(answer, 300)}`);
-  }
-
-  async confirmAnswerLacks(job, text) {
-    const answer = await this.#answer(job);
-    if (answer.includes(text)) throw new Error(`job ${job.id}'s answer contains "${text}": ${excerpt(answer, 300)}`);
   }
 
   async #conversationOf(job) {
@@ -875,17 +1114,21 @@ class FR001DelegationDriver {
       if (!planted[name]) throw new InstrumentError(`the session planted no value under ${name}, so the engine cannot be checked for it`);
       return [name, planted[name]];
     });
-    const offences = new Set();
+    const offences = new Map();
+    const offend = (rule, name) => offences.set(rule, new Set([...(offences.get(rule) ?? []), name]));
     for (const env of await this.#engineEnvironments(job)) {
       for (const [name, value] of Object.entries(env)) {
         const prefix = session.forbiddenPrefixes.find((candidate) => name.startsWith(candidate));
-        if (prefix) offences.add(`${name} is named as a ${prefix}* setting of the session`);
+        if (prefix) offend(`named as a ${prefix}* setting of the session`, name);
         for (const [source, planted] of watched) {
-          if (String(value).includes(planted)) offences.add(`${name} holds the session's ${source} value`);
+          if (String(value).includes(planted)) offend(`holding the session's ${source} value`, name);
         }
       }
     }
-    if (offences.size > 0) throw new Error(`Antigravity's environment for job ${job.id} carries the delegating session's settings:\n       ${[...offences].join('\n       ')}`);
+    if (offences.size > 0) {
+      const lines = [...offences].map(([rule, names]) => `${rule}: ${[...names].slice(0, NAMES_SHOWN).join(', ')}${names.size > NAMES_SHOWN ? ` and ${names.size - NAMES_SHOWN} more` : ''}`);
+      throw new Error(`Antigravity's environment for job ${job.id} carries the delegating session's settings:\n       ${lines.join('\n       ')}`);
+    }
   }
 
   async confirmEngineEnvironmentKeeps(job, kept) {
@@ -1118,6 +1361,7 @@ class FR001DelegationDriver {
   }
 
   async close() {
+    this.#storeWatch?.close();
     for (const { child } of this.#observers) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     const engines = readEngineRecords(this.#observations);
     for (const engine of engines) if (engine.kind === 'stand-in') writeFileSync(join(this.#observations, `release-${engine.pid}`), '');
