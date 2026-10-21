@@ -1,4 +1,4 @@
-//status: Draft
+//status: Approved
 import { Given, InstrumentError, Then, When } from './feature-runner.mjs';
 import { STORES } from './fr002-dsl.mjs';
 
