@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import { EngineRecord, hasOption, optionValue } from './fr001-engine-record.mjs';
+import { conversationStore } from './fr001-plugin-layout.mjs';
 
 export const STAND_IN_VERSION = '0.0.0-fr001-stand-in';
 export const STAND_IN_MODELS = 'stand-in-model-a\tStand-in Model A\nstand-in-model-b\tStand-in Model B\n';
@@ -31,7 +33,35 @@ const PLAN = Object.freeze({
   'runs-another-model': { init: 'other', pause: 1500, result: 'SUCCESS', exit: 0 },
   'runs-another-model-and-keeps-working': { init: 'other', hold: 'before-result', result: 'SUCCESS', exit: 0 },
   'account-unavailable': { init: 'requested', result: 'SUCCESS', exit: 0 },
+  'quotes-prompt-and-succeeds': { init: 'requested', result: 'SUCCESS', quote: true, exit: 0 },
+  'quotes-prompt-and-succeeds-in-a-recorded-conversation': { init: 'requested', result: 'SUCCESS', quote: true, conversation: true, exit: 0 },
+  'quotes-prompt-and-reports-unsuccessful-result': { init: 'requested', result: 'ERROR', quote: true, exit: 0 },
+  'quotes-prompt-and-succeeds-once-released': { init: 'requested', hold: 'before-result', result: 'SUCCESS', quote: true, exit: 0 },
 });
+const USER_INPUT_STEP = 14;
+const PLANNER_RESPONSE_STEP = 15;
+
+function quoted(prompt) {
+  return `Prompt: ${JSON.stringify(prompt)}`;
+}
+
+function quotingFindings(prompt) {
+  return { findings: VALID_FINDINGS.findings.map((finding) => ({ ...finding, evidence: quoted(prompt) })) };
+}
+
+function recordConversation(id, prompt) {
+  const store = conversationStore(process.env.HOME);
+  mkdirSync(store, { recursive: true });
+  const db = new DatabaseSync(join(store, `${id}.db`));
+  try {
+    db.exec('CREATE TABLE IF NOT EXISTS steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)');
+    const insert = db.prepare('INSERT INTO steps (idx, step_type, step_payload) VALUES (?, ?, ?)');
+    insert.run(0, USER_INPUT_STEP, Buffer.from(prompt, 'utf8'));
+    insert.run(1, PLANNER_RESPONSE_STEP, Buffer.from(STAND_IN_RESPONSE, 'utf8'));
+  } finally {
+    db.close();
+  }
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -108,9 +138,12 @@ export async function standIn({ behaviour, observations }) {
   }
   if (plan.pause) await sleep(plan.pause);
   if (plan.hold === 'before-result') await holdUntilReleased(observations);
+  const prompt = optionValue(argv, 'print') ?? '';
+  if (plan.conversation) recordConversation(conversationId, prompt);
   if (plan.result) {
-    const result = { conversation_id: conversationId, status: plan.result, response: STAND_IN_RESPONSE, duration_seconds: 0.1, num_turns: 1 };
-    if (review) result.structured_output = plan.findings === 'broken' ? BROKEN_FINDINGS : VALID_FINDINGS;
+    const response = plan.quote ? `${STAND_IN_RESPONSE} ${quoted(prompt)}` : STAND_IN_RESPONSE;
+    const result = { conversation_id: conversationId, status: plan.result, response, duration_seconds: 0.1, num_turns: 1 };
+    if (review) result.structured_output = plan.findings === 'broken' ? BROKEN_FINDINGS : plan.quote ? quotingFindings(prompt) : VALID_FINDINGS;
     emit({ event: 'result', result });
   }
   if (plan.hold === 'after-result') await holdUntilReleased(observations);

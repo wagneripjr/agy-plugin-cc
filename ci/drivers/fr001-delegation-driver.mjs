@@ -66,18 +66,18 @@ function sleep(ms) {
   return new Promise((done) => setTimeout(done, ms));
 }
 
-function canonical(value) {
+export function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
   return JSON.stringify(value ?? null);
 }
 
-function excerpt(text, size = 600) {
+export function excerpt(text, size = 600) {
   const flat = String(text ?? '').trim();
   return flat.length > size ? `${flat.slice(0, size)}...` : flat;
 }
 
-function findExecutable(name, path, exclude = []) {
+export function findExecutable(name, path, exclude = []) {
   for (const dir of path.split(delimiter)) {
     if (!dir || exclude.includes(dir)) continue;
     const candidate = join(dir, name);
@@ -95,13 +95,13 @@ function parseProcessTable(out) {
   });
 }
 
-function alive(pid) {
+export function alive(pid) {
   if (!pid) return false;
   const out = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' }).stdout.trim();
   return out !== '' && !out.startsWith('Z');
 }
 
-function walkFiles(root, skip = () => false) {
+export function walkFiles(root, skip = () => false) {
   const out = [];
   const visit = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -156,8 +156,27 @@ function regularFiles(root) {
   return out;
 }
 
-function git(cwd, args) {
+export function git(cwd, args) {
   return spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', maxBuffer: 64 << 20 });
+}
+
+export function writeLauncher(work, module, entry, config) {
+  const bin = mkdtempSync(join(work, 'bin-'));
+  const path = join(bin, 'agy');
+  const url = pathToFileURL(join(dirname(new URL(import.meta.url).pathname), module)).href;
+  writeFileSync(path, `#!${process.execPath}\nimport(${JSON.stringify(url)}).then((m) => m.${entry}(${JSON.stringify(config)}));\n`);
+  chmodSync(path, 0o755);
+  return bin;
+}
+
+export function subagentName(repoRoot) {
+  const dir = join(repoRoot, AGENTS_DIR);
+  const files = existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('.md')) : [];
+  if (files.length === 0) throw new Error(`the plugin ships no subagent to ask: ${AGENTS_DIR} holds no agent definition`);
+  const header = /^---\n([\s\S]*?)\n---/.exec(readFileSync(join(dir, files[0]), 'utf8'))?.[1] ?? '';
+  const agent = /^name:\s*(.+)$/m.exec(header)?.[1]?.trim() ?? files[0].replace(/\.md$/, '');
+  const plugin = JSON.parse(readFileSync(join(repoRoot, PLUGIN_MANIFEST), 'utf8')).name;
+  return `${plugin}:${agent}`;
 }
 
 function sameFile(a, b) {
@@ -253,12 +272,7 @@ class FR001DelegationDriver {
   }
 
   #launcher(module, entry, config) {
-    const bin = mkdtempSync(join(this.#work, 'bin-'));
-    const path = join(bin, 'agy');
-    const url = pathToFileURL(join(dirname(new URL(import.meta.url).pathname), module)).href;
-    writeFileSync(path, `#!${process.execPath}\nimport(${JSON.stringify(url)}).then((m) => m.${entry}(${JSON.stringify(config)}));\n`);
-    chmodSync(path, 0o755);
-    return bin;
+    return writeLauncher(this.#work, module, entry, config);
   }
 
   async useInstalledEngine() {
@@ -1276,19 +1290,9 @@ class FR001DelegationDriver {
     }
   }
 
-  #subagentName() {
-    const dir = join(this.#repoRoot, AGENTS_DIR);
-    const files = existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('.md')) : [];
-    if (files.length === 0) throw new Error(`the plugin ships no subagent to ask: ${AGENTS_DIR} holds no agent definition`);
-    const header = /^---\n([\s\S]*?)\n---/.exec(readFileSync(join(dir, files[0]), 'utf8'))?.[1] ?? '';
-    const agent = /^name:\s*(.+)$/m.exec(header)?.[1]?.trim() ?? files[0].replace(/\.md$/, '');
-    const plugin = JSON.parse(readFileSync(join(this.#repoRoot, PLUGIN_MANIFEST), 'utf8')).name;
-    return `${plugin}:${agent}`;
-  }
-
   async askSubagent(project, request) {
     this.#requireRuntime();
-    const agent = this.#subagentName();
+    const agent = subagentName(this.#repoRoot);
     const claude = findExecutable('claude', process.env.PATH ?? '');
     if (!claude) throw new InstrumentError('Claude Code (claude) is not installed, so the subagent cannot be asked');
     const engineEnv = this.#engineEnv();
