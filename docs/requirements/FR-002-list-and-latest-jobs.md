@@ -86,7 +86,8 @@ Each check uses its own empty job store and the stand-in engine, except the suba
 - **Workspace boundaries.** Outside any git work tree, from a directory `D`, status with no id lists
   jobs recorded in `D` and in its subdirectories. It omits jobs recorded in a sibling whose path
   merely starts with `D`'s name. Run from a symlink to `D`, it lists the same jobs as from `D`. When
-  `D` is `/`, every job is listed.
+  `D` is `/`, every job in the store belongs to the workspace, so the listing equals `--all`'s
+  without the directory field.
 - **Empty.** In a workspace with no jobs, status with no id prints the no-jobs message on stdout and
   exits 0, and `--json` prints `[]`. Result with no id prints the no-jobs message on stderr, nothing
   on stdout, and exits 1.
