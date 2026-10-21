@@ -7,7 +7,7 @@ description: The runtime spawns agy with no env option, so the unsandboxed task 
 home: FR-001
 requirements: [FR-001]
 specs: [ci/features/FR-001-agy-delegation.feature, ci/test-fr001-acceptance.mjs]
-adrs: [ADR-001]
+adrs: [ADR-001, ADR-002]
 ---
 # BUG-001: The agy engine inherits the runtime's whole environment, so a task leg can read stored prompts and the operator's transcript path
 
@@ -25,7 +25,11 @@ The FR-001 acceptance row "A run that does not resume starts a conversation of i
 3. The fresh run's agy conversation shows it ran `env` and found `CLAUDE_PLUGIN_DATA`. It read every job record under `plugin-data/jobs`, including job A's stored argv, which carries the codeword prompt. It also ran `cat "$CODEX_COMPANION_TRANSCRIPT_PATH"`, `agy session list`, `ls ~/.gemini/antigravity-cli/brain` and `ps aux | grep agy`.
 
 ## Expected vs Observed
-- **Expected**: A fresh run cannot see another job's prompts or the operator's session transcript. The engine receives only the environment it needs to run.
+- **Expected**: The engine receives only an allowlisted environment. No name in it is a `CLAUDE_*`
+  or `CODEX_*` setting of the delegating session, and no value in it contains such a setting's
+  value. The job store holds no prompt text. Reads that an unsandboxed engine makes directly from
+  disk, running as the operator's user, are outside this bug and are recorded as accepted residual
+  risk in ADR-002.
 - **Observed**: `plugins/agy/scripts/lib/engine.mjs` spawns agy with no `env` option, so agy inherits the runtime's whole environment. That includes the plugin data directory, which holds every job's argv and prompt, and the Claude Code transcript path.
 
 ## Root Cause

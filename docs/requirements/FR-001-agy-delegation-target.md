@@ -1,11 +1,11 @@
 ---
 id: FR-001
 type: Requirement
-status: Approved
+status: Draft
 title: "FR-001: Antigravity is a delegation target beside Codex"
 description: A session hands a review or a task to agy through one plugin, and every agy leg a session runs goes through it, as a tracked, resumable, verifiable job.
 derives-from: [hub:R-121]
-adrs: [hub:ADR-014, hub:ADR-011, ADR-001]
+adrs: [hub:ADR-014, hub:ADR-011, ADR-001, ADR-002]
 specs: [ci/features/FR-001-*.feature, ci/test-fr001-*.mjs]
 ---
 # FR-001: Antigravity is a delegation target beside Codex
@@ -49,7 +49,8 @@ them if the engine moves.
 
 1. **A delegation names its engine settings and the engine confirms the model.** Every run is
    started with an explicit `--model` and `--effort`, chosen by the caller or by the plugin's
-   documented defaults, never omitted so that agy picks. The job record keeps the argv it spawned.
+   documented defaults, never omitted so that agy picks. The job record keeps the argv it spawned,
+   with the prompt argument replaced by its SHA-256 digest, so the job store holds no prompt text.
    A run that reached `init` records `init.model`. If that differs from the requested model, the
    plugin ends the engine process and the run is failed, with a reason naming both models. The
    effort is recorded as requested, and the result says the engine does not confirm it. A run that
@@ -81,7 +82,8 @@ them if the engine moves.
    fresh conversation, and an explicit fresh marker selects the same thing. A follow-up names a
    prior job and continues that job's recorded conversation with `--conversation <id>`. A follow-up
    naming a job that has no recorded conversation id fails before spawning agy, with a reason. A
-   follow-up answers with the prior turns in context.
+   follow-up answers with the prior turns in context. A fresh run's conversation holds no turn of an
+   earlier job.
 6. **Proof is tied to the invocation.** Every prompt the plugin sends carries the job's id as a
    marker. When the engine reports success, the plugin opens the conversation file named by the
    conversation id. It records the `idx` of the user-input step, as defined under Frozen
@@ -179,7 +181,11 @@ The checks:
   fixture tree and its git history. A follow-up on that job asks: "What codeword did I give you in
   the previous turn? Answer with the codeword only." The follow-up's response contains the codeword,
   and it reuses the job's conversation id. A fresh run in the same fixture asks the same question.
-  It gets a different conversation id, and its response does not contain the codeword.
+  It gets a different conversation id. Its conversation file held 0 steps before it started, and that
+  file holds no user-input step carrying the earlier job's marker. The fresh run's response is not
+  checked, because an unsandboxed engine can find the codeword on disk (ADR-002).
+- **Stored prompts.** After every run in the suite, no file in the job store contains the task text
+  or the codeword of any job.
 - **Missing conversation id.** A follow-up naming a job whose record has no conversation id reads
   failed before any agy process is spawned.
 - **Background.** A run started in the background returns from the starting command while the engine
