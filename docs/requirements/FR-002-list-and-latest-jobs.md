@@ -17,61 +17,93 @@ did not keep the id from a job's start report cannot find its job.
 ## Source
 
 The operator found the gap on first use: `/agy:status` with no arguments printed usage and failed.
-The `codex` plugin is the model here. Its status with no id lists recent jobs.
+The `codex` plugin is the model here. Its status with no id lists recent jobs, but its preference
+for finished jobs is not adopted.
 
 ## Contract
 
-1. **The workspace.** The workspace of an invocation is the git top-level directory of the
-   directory it runs in, or that directory itself when it is not inside a git work tree. A job
-   belongs to a workspace when the directory recorded for the job is the workspace root or lies
-   inside it.
-2. **Status with no job id lists jobs.** It lists the current workspace's jobs, newest first by the
-   time each job was created, with ties broken by job id. It shows at most 10 jobs. Each entry gives
-   the job id, its leg (review or task), its state, its verification outcome when it succeeded, the
-   model it requested, and when it was created. `--all` lists the jobs of every workspace and adds
-   each job's directory. A workspace with no jobs prints that it has none and exits 0.
-3. **Result with no job id reports the newest job.** It reports the current workspace's newest job,
-   exactly as `result <that job's id>` would. A workspace with no jobs prints that it has none and
-   exits non-zero.
-4. **Cancel still needs a job id.** Cancel with no id starts nothing, says that cancel needs a job id
-   and that status lists them, and exits with the usage code. A cancel is never aimed at a job the
-   caller did not name.
-5. **Listing only reads.** Listing and the no-id result change no job record, start no process
-   besides the reader itself, and never wait for a running job.
-6. **No prompt text.** No listing entry and no `--json` field carries prompt text (ADR-002).
-7. **The same surface.** `--json` gives the same information as one JSON document: an array of
-   entries for status, and the result report for result. The forwarding subagent's routing grammar
-   is unchanged, and an empty request reaches the runtime as status with no id.
+1. **The job store.** Listing reads only the job store the invocation selects, the same one FR-001's
+   commands use: `CLAUDE_PLUGIN_DATA/jobs` when that variable is set, else the runtime's documented
+   fallback. Other stores are never searched.
+2. **The workspace.** An invocation's workspace root is the real path, with every symlink resolved,
+   of the git top-level directory of the directory it runs in. Outside a git work tree it is the real
+   path of that directory. A job's directory is the real path of the directory recorded for the job,
+   or the recorded path unchanged when it no longer exists. A job belongs to the workspace when its
+   directory equals the root or begins with the root followed by `/`. A sibling such as `/work2` is
+   therefore not inside `/work`.
+3. **Order.** Jobs are ordered newest first by the `createdAt` value written when the job record is
+   first created. Later updates to a record do not move it. Equal `createdAt` values are ordered by
+   job id, descending in byte order. "Newest job" means the first job in this order.
+4. **Status with no job id lists jobs.** It prints the newest 10 jobs of the workspace in that order.
+   Every entry gives the job id, its leg (review or task), its state, the model it requested, and
+   its `createdAt`. A succeeded entry also gives its verification outcome, verified or unverified.
+   `--all` drops the workspace filter: it prints the newest 10 jobs of the whole store, across
+   workspaces, in the same order, and adds each job's directory. Status with no id exits 0, whether
+   it found jobs or not.
+5. **Result with no job id reports the newest job.** It prints exactly what `result <newest job's id>`
+   prints, with the same exit status, whatever that job's state is. An older succeeded job never
+   takes precedence over a newer running, failed or cancelled one.
+6. **Empty workspace.** Status with no id prints, on stdout, that the workspace has no agy jobs, and
+   exits 0. With `--json` it prints `[]`. Result with no id prints the same message on stderr,
+   prints nothing on stdout, with or without `--json`, and exits 1.
+7. **JSON shape.** Status `--json` prints one JSON array. Each element has the fields `id`, `leg`,
+   `state`, `model` and `createdAt`. `verification` is `"verified"` or `"unverified"` on a succeeded
+   job and `null` otherwise. `directory` is present only under `--all`. Result `--json` with no id
+   prints the same document as `result <id> --json`.
+8. **Cancel still needs a job id.** Cancel with no id starts nothing and changes no record. It says
+   on stderr that cancel needs a job id and that status lists them, and exits 2, the usage code.
+9. **Listing only reads.** Status and result with no id change no job record and wait for no job. The
+   only process they start is `git`, to find the workspace root.
+10. **Prompt text stays where FR-001 allows it.** No status entry, in either form, carries any part of
+    a job's prompt. A no-id result carries prompt text only where `result <id>` would: inside the
+    engine's own response or findings of a succeeded job.
+11. **The subagent.** A request to the forwarding subagent that is empty or only whitespace reaches
+    the runtime as status with no id. Every other request keeps FR-001 contract 8's grammar. Like
+    FR-001's subagent checks, this runs a live Claude Code subagent. The runtime-invocation recorder
+    observes the call, so the check reads what the runtime received, not what the model says.
 
 ## Acceptance
 
-Each check uses its own empty job store and the stand-in engine, unless it says otherwise.
+Each check uses its own empty job store and the stand-in engine, except the subagent check.
 
-- **Listing order and fields.** Three jobs are started in one workspace, one after another. A task
-  succeeds, a review fails, and a background task is still running. Status with no id lists exactly
-  those three, newest first. Each entry carries the five fields, and the succeeded task shows its
-  verification outcome. The same command with `--json` yields an array whose order and values match.
+- **Listing order and fields.** In one workspace, these jobs are created one after another: a task
+  that succeeds verified, a task that succeeds unverified, a review that fails, a task that is
+  cancelled, and a background task held running. Status with no id lists exactly those five, newest
+  first. Each entry carries id, leg, state, model and `createdAt`. The two succeeded entries show
+  verified and unverified, and no other entry shows a verification. The `--json` array has the same
+  order and values, with `verification: null` on the three non-succeeded entries and no `directory`
+  field.
+- **Order is by creation, not update.** Two jobs are given equal `createdAt` values. They are listed
+  by job id, descending. An older job whose record is updated after a newer job was created still
+  lists after the newer one.
 - **Limit.** After 12 jobs in one workspace, status with no id lists exactly the 10 newest.
-- **Workspace scoping.** Jobs are started in two separate fixture repositories. Status with no id,
-  run from a subdirectory of the first repository, lists only the first repository's jobs. With
-  `--all` it lists both repositories' jobs, each with its directory.
-- **Outside git.** Run from a directory that is not inside a git work tree, status with no id lists
-  only the jobs recorded for that directory.
-- **Empty.** In a workspace with no jobs, status with no id says there are none and exits 0. Result
-  with no id says there are none and exits non-zero.
-- **Latest result.** After two jobs in one workspace, result with no id prints the same report, byte
-  for byte, as result with the newer job's id. Its `--json` form equals that id's `--json` form.
-- **Cancel needs an id.** Cancel with no id exits with the usage code, names status as the way to
-  find ids, and leaves every job record byte-identical.
-- **Read-only, non-blocking.** With a background job running, status with no id returns within 2
-  seconds. The job store's files are byte-identical before and after, and the running job's engine
-  is still alive afterwards.
-- **No prompt text.** No byte sequence of any job's prompt appears in the status listing, its
-  `--json` form, or the no-id result's output, other than inside a stored engine response.
-- **Subagent.** The forwarding subagent, given an empty request, calls the runtime once as status
-  with no id and replies with its output unchanged.
+- **Across workspaces.** Twelve jobs are created alternately in two fixture repositories. From a
+  subdirectory of the first repository, status with no id lists only that repository's six jobs.
+  With `--all` it lists the 10 newest of all twelve, in global order, each with its directory.
+- **Workspace boundaries.** Outside any git work tree, from a directory `D`, status with no id lists
+  jobs recorded in `D` and in its subdirectories. It omits jobs recorded in a sibling whose path
+  merely starts with `D`'s name. Run from a symlink to `D`, it lists the same jobs as from `D`.
+- **Empty.** In a workspace with no jobs, status with no id prints the no-jobs message on stdout and
+  exits 0, and `--json` prints `[]`. Result with no id prints the no-jobs message on stderr, nothing
+  on stdout, and exits 1.
+- **Latest result.** After an older succeeded job and a newer failed job, result with no id prints
+  byte for byte what result with the failed job's id prints, with the same exit status. Its `--json`
+  form equals that id's `--json` form. A newer running job reports running with no body, and a newer
+  cancelled job reports cancelled.
+- **Cancel needs an id.** Cancel with no id exits 2, names status on stderr as the way to find ids,
+  starts no process and leaves every job record byte-identical.
+- **Read-only.** A background job is held running by a stand-in that writes nothing after its start.
+  Status and result with no id each return within 2 seconds. The whole job store is byte-identical
+  before and after both. The held job's engine is still alive. Neither command started any process
+  other than `git`.
+- **No prompt text.** Each job's prompt carries a unique random marker, and the stand-in's response
+  quotes it. The marker appears in no status listing, in either form. In the no-id result it appears
+  only inside the engine response, or the findings, of a succeeded job.
+- **Subagent.** Given an empty request, and separately a whitespace-only request, the forwarding
+  subagent's single runtime call is recorded as status with no id. Its reply equals the runtime's
+  output.
 
 ## Out of scope
 
-Pagination beyond the newest 10, filtering by state or leg, deleting or pruning jobs, and listing
-jobs across machines.
+Pagination beyond the newest 10, filtering by state or leg, deleting or pruning jobs, other job
+stores, and listing jobs across machines.
