@@ -1,4 +1,4 @@
-//status: Draft
+//status: Approved
 export const DRIVER_MODULES = Object.freeze({
   delegation: Object.freeze({ path: 'ci/drivers/fr001-delegation-driver.mjs', factory: 'createDelegationDriver' }),
   pluginSource: Object.freeze({ path: 'ci/drivers/fr001-plugin-source-driver.mjs', factory: 'createPluginSourceDriver' }),
