@@ -1,6 +1,6 @@
 {
   "name": "agy",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Delegate a review or a task to Antigravity (agy) as a tracked, resumable, verifiable job.",
   "author": {
     "name": "Wagner Ignacio Pinto Junior"
