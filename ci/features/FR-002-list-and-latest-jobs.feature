@@ -1,4 +1,4 @@
-#status: Draft
+#status: Approved
 @FR-002
 Feature: FR-002 Status with no job id lists jobs, and result with no job id shows the latest
   A session finds its Antigravity jobs without remembering their ids. Status with no job id lists

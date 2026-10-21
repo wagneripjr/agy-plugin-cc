@@ -1,4 +1,4 @@
-//status: Draft
+//status: Approved
 export const DRIVER_MODULES = Object.freeze({
   listing: Object.freeze({ path: 'ci/drivers/fr002-listing-driver.mjs', factory: 'createListingDriver' }),
 });
