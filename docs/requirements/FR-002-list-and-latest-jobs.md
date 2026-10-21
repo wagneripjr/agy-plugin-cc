@@ -1,7 +1,7 @@
 ---
 id: FR-002
 type: Requirement
-status: Approved
+status: Done
 title: "FR-002: Status with no job id lists jobs, and result with no job id shows the latest"
 description: A session can find its agy jobs without remembering their ids. Status with no id lists the workspace's jobs newest first, and result with no id reports the newest one.
 derives-from: [hub:R-121]
