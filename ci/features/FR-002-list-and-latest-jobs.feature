@@ -1,4 +1,4 @@
-#status: Approved
+#status: Draft
 @FR-002
 Feature: FR-002 Status with no job id lists jobs, and result with no job id shows the latest
   A session finds its Antigravity jobs without remembering their ids. Status with no job id lists
@@ -255,17 +255,20 @@ Feature: FR-002 Status with no job id lists jobs, and result with no job id show
         | a task that is cancelled       |
         | a task held running            |
 
-  Rule: A blank request to the subagent asks for the listing
+  Rule: Only a request of whitespace to the subagent asks for the listing; every other request stays a task
 
     @live-subagent
-    Scenario Outline: A blank request to the subagent reaches the runtime as status with no job id
+    Scenario: A request of only whitespace to the subagent reaches the runtime as status with no job id
       Given a job was created in the workspace
-      When the subagent is given <request>
+      When the subagent is given a request of only whitespace
       Then the subagent made exactly one tool call, to the plugin runtime
       And the runtime was asked for status with no job id
       And the subagent's reply is the runtime's output, unchanged
 
-      Examples:
-        | request                         |
-        | an empty request                |
-        | a request of only whitespace    |
+    @live-subagent
+    Scenario: A request that reads "(no content)" reaches the runtime as a task with that text
+      Given a job was created in the workspace
+      When the subagent is given the request "(no content)"
+      Then the subagent made exactly one tool call, to the plugin runtime
+      And the runtime was asked for a task whose text is "(no content)", with no routing option
+      And the subagent's reply is the runtime's output, unchanged

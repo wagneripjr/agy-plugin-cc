@@ -1,4 +1,4 @@
-//status: Approved
+//status: Draft
 import { Given, InstrumentError, Then, When } from './feature-runner.mjs';
 import { STORES } from './fr002-dsl.mjs';
 
@@ -12,8 +12,7 @@ const JOB = Object.freeze({
   'a task held running': 'task-held-running',
 });
 
-const BLANK_REQUEST = Object.freeze({
-  'an empty request': '',
+const NAMED_REQUEST = Object.freeze({
   'a request of only whitespace': '  \t \n',
 });
 
@@ -53,7 +52,8 @@ export const listingSteps = [
   When(/^the newest job's result is read by its id from (.+)$/, (dsl, place) => dsl.readNewestById(place)),
   When(/^a cancel is asked for with no job id from (.+)$/, (dsl, place) => dsl.cancelWithoutId(place)),
   When(/^the held task is released and finishes$/, (dsl) => dsl.releaseHeld()),
-  When(/^the subagent is given (.+)$/, (dsl, phrase) => dsl.askSubagent(lookup(BLANK_REQUEST, phrase, 'blank request'))),
+  When(/^the subagent is given ([^"]+)$/, (dsl, phrase) => dsl.askSubagent(lookup(NAMED_REQUEST, phrase, 'request'))),
+  When(/^the subagent is given the request "(.+)"$/, (dsl, request) => dsl.askSubagent(request)),
 
   Then(/^the listing shows exactly (.+), newest first$/, (dsl, selection) => dsl.confirmListsExactly(selection)),
   Then(/^every entry gives its job's id, leg, state, requested model and creation time$/, (dsl) => dsl.confirmEntriesIdentify()),
@@ -85,5 +85,6 @@ export const listingSteps = [
   Then(/^the latest result carries a job's marker only inside the engine's own response or findings of a succeeded job$/, (dsl) => dsl.confirmLatestConfinesMarkers()),
   Then(/^the subagent made exactly one tool call, to the plugin runtime$/, (dsl) => dsl.confirmSubagentMadeOneRuntimeCall()),
   Then(/^the runtime was asked for status with no job id$/, (dsl) => dsl.confirmRuntimeAskedForStatusWithoutId()),
+  Then(/^the runtime was asked for a task whose text is "(.+)", with no routing option$/, (dsl, text) => dsl.confirmRuntimeAskedForTask(text)),
   Then(/^the subagent's reply is the runtime's output, unchanged$/, (dsl) => dsl.confirmSubagentReplyIsRuntimeOutput()),
 ];

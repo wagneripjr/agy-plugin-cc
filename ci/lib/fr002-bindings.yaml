@@ -1,4 +1,4 @@
-#status: Approved
+#status: Draft
 [
   {
     "term": "job"
@@ -148,7 +148,13 @@
     "term": "subagent"
   },
   {
-    "term": "blank-request"
+    "term": "whitespace-request"
+  },
+  {
+    "term": "routing-option"
+  },
+  {
+    "term": "task-text"
   },
   {
     "term": "runtime"

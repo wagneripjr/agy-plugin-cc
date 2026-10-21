@@ -1,4 +1,4 @@
-//status: Approved
+//status: Draft
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -427,6 +427,10 @@ export class ListingDsl {
 
   async confirmRuntimeAskedForStatusWithoutId() {
     await this.#driver.confirmRuntimeAskedForStatusWithoutId();
+  }
+
+  async confirmRuntimeAskedForTask(text) {
+    await this.#driver.confirmRuntimeAskedForTask(text);
   }
 
   async confirmSubagentReplyIsRuntimeOutput() {
