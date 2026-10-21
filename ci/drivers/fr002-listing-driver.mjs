@@ -965,6 +965,13 @@ class ListingDriver {
     if (canonical(call.argv) !== canonical(['status'])) throw new Error(`the runtime was asked for ${JSON.stringify(call.argv)}, not ["status"]`);
   }
 
+  async confirmRuntimeAskedForTask(text) {
+    const call = this.#call();
+    const asked = canonical(call.argv);
+    const accepted = [['task', '--', text], ...(text.startsWith('-') ? [] : [['task', text]])].map(canonical);
+    if (!accepted.includes(asked)) throw new Error(`the runtime was asked for ${JSON.stringify(call.argv)}, not a task whose text is ${JSON.stringify(text)} with no routing option`);
+  }
+
   async confirmSubagentReplyIsRuntimeOutput() {
     const call = this.#call();
     const { reply } = this.#asked();
