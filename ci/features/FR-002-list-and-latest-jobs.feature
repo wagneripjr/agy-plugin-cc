@@ -10,10 +10,14 @@ Feature: FR-002 Status with no job id lists jobs, and result with no job id show
   another, each one second after the one before. Each job asks for a model no other job of the
   scenario asks for, so an entry's model belongs to its own job.
 
+  Unless a scenario says otherwise, every job is created, and every reading is made, with the
+  session's job store: the store the session names for the plugin. The default job store is the one
+  the plugin uses when the session names none.
+
   A listing is read in both forms, readable and machine-readable, and every check on a listing or a
-  result holds for both. A task held running is a background task whose engine has started and
-  confirmed its model and then writes nothing until it is released. The outside directory is a
-  directory outside any git work tree.
+  result holds for both. A listing that shows jobs has also ended successfully. A task held running
+  is a background task whose engine has started and confirmed its model and then writes nothing
+  until it is released. The outside directory is a directory outside any git work tree.
 
   Rule: Status with no job id lists the workspace's jobs, newest first
 
@@ -30,18 +34,54 @@ Feature: FR-002 Status with no job id lists jobs, and result with no job id show
       When the jobs are listed from the workspace
       Then the listing shows exactly the ten newest jobs created, newest first
 
+  Rule: A listing reads only the job store the session selects
+
+    Scenario Outline: A listing holds the jobs of the store the session selects, never a newer job of another store
+      Given a job was created in the workspace, in <selected store>
+      And a job was created in the workspace, in <other store>
+      When the jobs are listed from the workspace, in <selected store>
+      Then the listing shows exactly the jobs created in <selected store>, newest first
+
+      Examples:
+        | selected store           | other store              |
+        | the session's job store  | the default job store    |
+        | the default job store    | the session's job store  |
+
+    Scenario Outline: Result with no job id reports the newest job of the store the session selects, never a newer job of another store
+      Given a job was created in the workspace, in <selected store>
+      And a job was created in the workspace, in <other store>
+      When the latest result is read from the workspace, in <selected store>
+      Then the latest result names the newest of the jobs created in <selected store>
+
+      Examples:
+        | selected store           | other store              |
+        | the session's job store  | the default job store    |
+        | the default job store    | the session's job store  |
+
   Rule: The order is by creation, never by later change
 
     Scenario: Jobs created at the same instant are listed by job id, highest first
-      Given four jobs were created in the workspace at the same instant
+      Given at least six jobs were created in the workspace at the same instant, the last of them not the one with the highest job id
       When the jobs are listed from the workspace
       Then the listing shows exactly the jobs created, newest first
+      And every entry gives its job's id, leg, state, requested model and creation time
+
+    Scenario: Of jobs created at the same instant, result with no job id reports the one with the highest job id
+      Given at least six jobs were created in the workspace at the same instant, the last of them not the one with the highest job id
+      When the latest result is read from the workspace
+      Then the latest result names the newest of the jobs created in the workspace
 
     Scenario: An older job whose record changes after a newer job was created still lists after it
       Given these jobs were created in the workspace, oldest first: a task held running, a task that succeeds unverified
       When the held task is released and finishes
       And the jobs are listed from the workspace
       Then the listing shows exactly the jobs created, newest first
+
+    Scenario: Result with no job id reports the newest job created, not the one changed most recently
+      Given these jobs were created in the workspace, oldest first: a task held running, a task that succeeds unverified
+      When the held task is released and finishes
+      And the latest result is read from the workspace
+      Then the latest result names the newest of the jobs created in the workspace
 
   Rule: The workspace is the repository, or the directory, the session runs in
 
@@ -70,6 +110,30 @@ Feature: FR-002 Status with no job id lists jobs, and result with no job id show
       When the jobs are listed from the outside directory
       And the jobs are listed from a symbolic link to the outside directory
       Then the listings from the outside directory and from the symbolic link to it are identical
+
+    Scenario: A job created through a symbolic link belongs to the directory the link points to
+      Given a job was created in a symbolic link to the outside directory
+      And a job was created in a sibling of the outside directory whose name begins with its name
+      When the jobs are listed from the outside directory
+      Then the listing shows exactly the jobs created in the outside directory, directly or through a symbolic link to it, newest first
+
+    Scenario: Across every workspace, a job created through a symbolic link gives the directory the link points to
+      Given a job was created in a symbolic link to the outside directory
+      When the jobs of every workspace are listed from the outside directory
+      Then every entry gives its job's directory
+
+    Scenario: A job whose directory no longer exists still belongs to the workspace that directory lay in, and to no other
+      Given a job was created in a subdirectory of the outside directory
+      And a job was created in a sibling of the outside directory whose name begins with its name
+      When the directories those jobs were created in are removed
+      And the jobs are listed from the outside directory
+      Then the listing shows exactly the jobs created in the outside directory and its subdirectory, newest first
+
+    Scenario: Result with no job id reports the newest job of its own workspace, never a newer one elsewhere
+      Given a job was created in the first repository
+      And a job was created in the second repository
+      When the latest result is read from the first repository
+      Then the latest result names the newest of the jobs created in the first repository
 
     Scenario: From the filesystem root, every job in the store belongs to the workspace
       Given a job was created in the first repository

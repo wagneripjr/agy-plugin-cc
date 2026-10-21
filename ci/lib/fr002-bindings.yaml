@@ -7,6 +7,15 @@
     "term": "job-store"
   },
   {
+    "term": "session-job-store"
+  },
+  {
+    "term": "default-job-store"
+  },
+  {
+    "term": "removed-directory"
+  },
+  {
     "term": "workspace"
   },
   {

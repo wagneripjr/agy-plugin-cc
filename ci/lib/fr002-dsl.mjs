@@ -12,6 +12,8 @@ export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', 
 const FIRST_INSTANT = Date.parse('2026-01-01T00:00:00.000Z');
 const SPACING_MS = 1000;
 const LISTING_LIMIT = 10;
+const MIN_TIED = 6;
+const MAX_TIED = 9;
 const ONLY_GIT = Object.freeze(['git']);
 const NOTHING = Object.freeze([]);
 
@@ -27,6 +29,13 @@ const PLACES = Object.freeze({
   'the filesystem root': { kind: 'filesystem-root' },
 });
 
+const REMOVABLE = Object.freeze(['subdirectory', 'prefix-sibling']);
+
+export const STORES = Object.freeze({
+  "the session's job store": 'session',
+  'the default job store': 'default',
+});
+
 async function loadDriver(module, contract) {
   const path = join(REPO_ROOT, module.path);
   if (!existsSync(path)) throw new InstrumentError(`the FR-002 protocol driver is not implemented yet: ${module.path}`);
@@ -40,7 +49,17 @@ async function loadDriver(module, contract) {
 
 function newestFirst(a, b) {
   if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
+  return byIdDescending(a, b);
+}
+
+function byIdDescending(a, b) {
   return Buffer.compare(Buffer.from(b.handle.id), Buffer.from(a.handle.id));
+}
+
+function tieIsDiscriminating(tied) {
+  const [highest] = [...tied].sort(byIdDescending);
+  const creationIsIdOrder = tied.every((job, i) => i === 0 || byIdDescending(tied[i - 1], job) < 0);
+  return highest !== tied.at(-1) && !creationIsIdOrder;
 }
 
 function mintMarker() {
@@ -87,25 +106,31 @@ export class ListingDsl {
     return instant;
   }
 
-  async #create(alias, kind, createdAt) {
+  async #create(alias, kind, createdAt, store = 'session') {
     if (!Object.hasOwn(JOB_KINDS, kind)) throw new InstrumentError(`the vocabulary has no kind of job called "${kind}"`);
     const model = `stand-in-model-${String(this.#jobs.length + 1).padStart(2, '0')}`;
     const marker = this.#marking ? mintMarker() : undefined;
-    const handle = await this.#driver.createJob({ place: await this.#place(alias), kind, createdAt, model, marker });
-    this.#jobs.push({ handle, alias, kind, createdAt, model, marker, ...JOB_KINDS[kind] });
+    const handle = await this.#driver.createJob({ place: await this.#place(alias), kind, createdAt, model, store, marker });
+    const job = { handle, alias, kind, createdAt, model, store, marker, ...JOB_KINDS[kind] };
+    this.#jobs.push(job);
+    return job;
   }
 
-  async createJobs(alias, kinds) {
-    for (const kind of kinds) await this.#create(alias, kind, this.#instant());
+  async createJobs(alias, kinds, store = 'session') {
+    for (const kind of kinds) await this.#create(alias, kind, this.#instant(), store);
   }
 
   async createSeries(alias, count) {
     await this.createJobs(alias, Array(count).fill('task-succeeds-unverified'));
   }
 
-  async createAtOneInstant(alias, count) {
+  async createTiedJobs(alias) {
     const instant = this.#instant();
-    for (let i = 0; i < count; i += 1) await this.#create(alias, 'task-succeeds-unverified', instant);
+    const tied = [];
+    while (tied.length < MIN_TIED || !tieIsDiscriminating(tied)) {
+      if (tied.length === MAX_TIED) throw new InstrumentError(`${MAX_TIED} jobs created at one instant still list in their creation order, so the tie would not be tested`);
+      tied.push(await this.#create(alias, 'task-succeeds-unverified', instant));
+    }
   }
 
   async createAlternately(aliases, count) {
@@ -121,6 +146,13 @@ export class ListingDsl {
     const held = this.#jobs.filter((job) => job.state === 'running');
     if (held.length !== 1) throw new InstrumentError(`the scenario refers to the held job while ${held.length} jobs are held running`);
     return held[0];
+  }
+
+  async removeJobPlaces() {
+    for (const alias of new Set(this.#jobs.map((job) => job.alias))) {
+      if (!REMOVABLE.includes(PLACES[alias].kind)) throw new InstrumentError(`the scenario removes ${alias}, which is not a place that can be removed`);
+      await this.#driver.removePlace(this.#places.get(alias));
+    }
   }
 
   async releaseHeld() {
@@ -139,19 +171,19 @@ export class ListingDsl {
     return operation;
   }
 
-  async list(alias, { all }) {
-    const operation = await this.#observe('listing', alias, (from, form) => this.#driver.listJobs({ from, all, form }));
+  async list(alias, { all, store = 'session' }) {
+    const operation = await this.#observe('listing', alias, (from, form) => this.#driver.listJobs({ from, all, form, store }));
     operation.all = all;
     this.#listings.set(`${alias}|${all}`, operation);
   }
 
-  async readLatest(alias) {
-    this.#latest = await this.#observe('latest', alias, (from, form) => this.#driver.readLatestResult({ from, form }));
+  async readLatest(alias, store = 'session') {
+    this.#latest = await this.#observe('latest', alias, (from, form) => this.#driver.readLatestResult({ from, form, store }));
   }
 
   async readNewestById(alias) {
     const job = this.#newestIn(alias);
-    this.#byId = await this.#observe('by-id', alias, (from, form) => this.#driver.readResultOf({ job: job.handle, from, form }));
+    this.#byId = await this.#observe('by-id', alias, (from, form) => this.#driver.readResultOf({ job: job.handle, from, form, store: job.store }));
   }
 
   async cancelWithoutId(alias) {
@@ -164,7 +196,7 @@ export class ListingDsl {
   }
 
   #newestIn(alias) {
-    const [newest] = this.#jobs.filter((job) => job.alias === alias).sort(newestFirst);
+    const [newest] = this.#jobs.filter((job) => job.alias === alias && job.store === 'session').sort(newestFirst);
     if (!newest) throw new InstrumentError(`the scenario refers to the newest job of ${alias} before creating one there`);
     return newest;
   }
@@ -203,11 +235,16 @@ export class ListingDsl {
   #selection(phrase) {
     const ordered = [...this.#jobs].sort(newestFirst);
     const within = (aliases) => ordered.filter((job) => aliases.includes(job.alias));
+    const inStore = (store) => ordered.filter((job) => job.store === store);
     const selections = {
       'the jobs created': () => ordered,
       'the ten newest jobs created': () => ordered.slice(0, LISTING_LIMIT),
+      'the jobs created in the workspace': () => within(['the workspace']),
       'the jobs created in the first repository': () => within(['the first repository']),
       'the jobs created in the outside directory and its subdirectory': () => within(['the outside directory', 'a subdirectory of the outside directory']),
+      'the jobs created in the outside directory, directly or through a symbolic link to it': () => within(['the outside directory', 'a symbolic link to the outside directory']),
+      "the jobs created in the session's job store": () => inStore('session'),
+      'the jobs created in the default job store': () => inStore('default'),
     };
     if (!Object.hasOwn(selections, phrase)) throw new InstrumentError(`the vocabulary has no selection of jobs called "${phrase}"`);
     const selected = selections[phrase]();
@@ -225,9 +262,16 @@ export class ListingDsl {
     return marked;
   }
 
+  #directoryPlaces() {
+    return [...this.#places].filter(([alias]) => PLACES[alias].kind !== 'filesystem-root').map(([, place]) => place);
+  }
+
   async confirmListsExactly(phrase) {
     const expected = this.#selection(phrase).map((job) => job.handle);
-    await this.#bothForms(this.#listing(), (reading) => this.#driver.confirmListsExactly(reading, expected));
+    await this.#bothForms(this.#listing(), async (reading) => {
+      await this.#driver.confirmExitStatus(reading, EXIT_STATUS.listed);
+      await this.#driver.confirmListsExactly(reading, expected);
+    });
   }
 
   async confirmEntriesIdentify() {
@@ -241,7 +285,7 @@ export class ListingDsl {
   }
 
   async confirmNoDirectories() {
-    const places = [...this.#places.values()];
+    const places = this.#directoryPlaces();
     await this.#bothForms(this.#listing(), (reading) => this.#driver.confirmNoDirectories(reading, places));
   }
 
@@ -264,6 +308,8 @@ export class ListingDsl {
       { readable: root.readable, machineReadable: root.machineReadable },
       { readable: all.readable, machineReadable: all.machineReadable },
     );
+    const places = this.#directoryPlaces();
+    await this.#bothForms(root, (reading) => this.#driver.confirmNoDirectories(reading, places));
   }
 
   async confirmReadableSaysNoJobs() {
@@ -302,6 +348,12 @@ export class ListingDsl {
     const newest = this.#newestIn(latest.alias);
     await this.#driver.confirmResultReports(latest.machineReadable, newest.handle, state);
     if (noBody) await this.#bothForms(latest, (reading) => this.#driver.confirmNoBody(reading));
+  }
+
+  async confirmLatestNames(phrase) {
+    const [newest] = this.#selection(phrase);
+    const others = this.#jobs.filter((job) => job !== newest).map((job) => job.handle);
+    await this.#bothForms(this.#latestRead(), (reading) => this.#driver.confirmResultNames(reading, newest.handle, others));
   }
 
   async confirmCancelRefusedAsUsage() {

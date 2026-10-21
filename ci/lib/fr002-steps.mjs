@@ -1,5 +1,6 @@
 //status: Draft
 import { Given, InstrumentError, Then, When } from './feature-runner.mjs';
+import { STORES } from './fr002-dsl.mjs';
 
 const JOB = Object.freeze({
   'a task that succeeds verified': 'task-succeeds-verified',
@@ -29,17 +30,25 @@ function lookup(table, phrase, what) {
 export const listingSteps = [
   Given(/^these jobs were created in (.+?), oldest first: (.+)$/, (dsl, place, jobs) =>
     dsl.createJobs(place, jobs.split(', ').map((phrase) => lookup(JOB, phrase, 'kind of job')))),
-  Given(/^a job was created in (.+)$/, (dsl, place) => dsl.createJobs(place, ['task-succeeds-unverified'])),
+  Given(/^a job was created in ([^,]+)$/, (dsl, place) => dsl.createJobs(place, ['task-succeeds-unverified'])),
+  Given(/^a job was created in ([^,]+), in (.+ job store)$/, (dsl, place, store) =>
+    dsl.createJobs(place, ['task-succeeds-unverified'], lookup(STORES, store, 'job store'))),
   Given(/^twelve jobs were created in the workspace$/, (dsl) => dsl.createSeries('the workspace', 12)),
-  Given(/^four jobs were created in the workspace at the same instant$/, (dsl) => dsl.createAtOneInstant('the workspace', 4)),
+  Given(/^at least six jobs were created in the workspace at the same instant, the last of them not the one with the highest job id$/, (dsl) =>
+    dsl.createTiedJobs('the workspace')),
   Given(/^twelve jobs were created alternately in the first and the second repository$/, (dsl) =>
     dsl.createAlternately(['the first repository', 'the second repository'], 12)),
   Given(/^the job store holds no job$/, () => {}),
   Given(/^every job's prompt carries a marker of its own, which the engine quotes back$/, (dsl) => dsl.markPrompts()),
 
-  When(/^the jobs are listed from (.+)$/, (dsl, place) => dsl.list(place, { all: false })),
+  When(/^the jobs are listed from ([^,]+)$/, (dsl, place) => dsl.list(place, { all: false })),
+  When(/^the jobs are listed from ([^,]+), in (.+ job store)$/, (dsl, place, store) =>
+    dsl.list(place, { all: false, store: lookup(STORES, store, 'job store') })),
   When(/^the jobs of every workspace are listed from (.+)$/, (dsl, place) => dsl.list(place, { all: true })),
-  When(/^the latest result is read from (.+)$/, (dsl, place) => dsl.readLatest(place)),
+  When(/^the latest result is read from ([^,]+)$/, (dsl, place) => dsl.readLatest(place)),
+  When(/^the latest result is read from ([^,]+), in (.+ job store)$/, (dsl, place, store) =>
+    dsl.readLatest(place, lookup(STORES, store, 'job store'))),
+  When(/^the directories those jobs were created in are removed$/, (dsl) => dsl.removeJobPlaces()),
   When(/^the newest job's result is read by its id from (.+)$/, (dsl, place) => dsl.readNewestById(place)),
   When(/^a cancel is asked for with no job id from (.+)$/, (dsl, place) => dsl.cancelWithoutId(place)),
   When(/^the held task is released and finishes$/, (dsl) => dsl.releaseHeld()),
@@ -59,6 +68,7 @@ export const listingSteps = [
   Then(/^the latest result prints nothing on its output$/, (dsl) => dsl.confirmLatestPrintsNothing()),
   Then(/^the latest result ends as a failure$/, (dsl) => dsl.confirmLatestFailed()),
   Then(/^the latest result is, byte for byte, the newest job's result read by its id, with the same exit status$/, (dsl) => dsl.confirmLatestIsNewestById()),
+  Then(/^the latest result names the newest of (.+)$/, (dsl, selection) => dsl.confirmLatestNames(selection)),
   Then(/^the latest result reports the newest job as (.+)$/, (dsl, phrase) => {
     const { state, noBody } = lookup(REPORTED, phrase, 'reported state');
     return dsl.confirmLatestReports(state, { noBody });
