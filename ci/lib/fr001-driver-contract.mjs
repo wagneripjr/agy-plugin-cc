@@ -1,4 +1,4 @@
-//status: Approved
+//status: Draft
 export const DRIVER_MODULES = Object.freeze({
   delegation: Object.freeze({ path: 'ci/drivers/fr001-delegation-driver.mjs', factory: 'createDelegationDriver' }),
   pluginSource: Object.freeze({ path: 'ci/drivers/fr001-plugin-source-driver.mjs', factory: 'createPluginSourceDriver' }),
@@ -21,6 +21,11 @@ export const ACCEPTANCE_DEFINITIONS = Object.freeze({
   engineEnvironment: "The engine's environment is the environment the process standing at agy's place on the search path holds when it starts, recorded by that process itself before it does anything else: the recording pass-through in front of the installed agy, which hands its own environment to agy unchanged, or the stand-in. It is never the environment the driver handed the runtime. A job's engine environment is that of the one engine process the job started; a job that started none has no engine environment, and both environment confirmations then fail.",
   sessionOmitted: 'The engine environment omits the session when no variable name in it begins with any of SESSION_ENVIRONMENT.forbiddenPrefixes, and no variable value in it contains, as a substring, the value planted under any name in SESSION_ENVIRONMENT.forbiddenValues or under any sentinel name. A failure names each offending variable and the rule it broke, never its value.',
   engineKeeps: "The engine environment keeps a variable when it holds that variable with exactly the value the runtime invocation that started the job was given. A failure names the variable and whether it was absent or changed.",
+  sessionValueCarried: "useSessionValueIn(setting, carrying) makes every later runtime invocation of the driver start with one of the SCREENED_SETTINGS set, on top of everything else the driver gives it, so that its value contains, as a substring, the value the session environment plants under the variable named carrying (a name of SESSION_ENVIRONMENT.forbiddenValues or a sentinel name). A directory the setting names is an existing directory: inside the carried value when that value is an existing directory, otherwise a new directory whose name contains the carried value, made outside the job store and every fixture project. 'locale' adds a variable named LC_ followed by a part minted for this call, whose value holds text before and after the carried value. 'temporary-directory' sets TMPDIR to such a directory. 'search-path' appends one such directory as the last entry of the search path the driver would otherwise give, leaving every earlier entry as it was. 'home' sets HOME to such a directory. The carried value is unknown before the suite runs: session id and job store are minted per driver, sentinels per suite run.",
+  noTurnOfEarlierJob: "A job's conversation holds no turn of an earlier job when the conversation file it names, read after the job ended, holds no user-input step (step_type 14) whose step_payload contains the earlier job's marker, the job id that the earlier job's prompt carried. A job that names no conversation, or whose conversation file cannot be read, fails the confirmation. Nothing about the engine's answer is checked.",
+  jobStore: 'The job store is the directory planted as CLAUDE_PLUGIN_DATA for the driver, every regular file under it walked recursively. The driver keeps no recording of its own inside it.',
+  storeHoldsNone: 'The job store holds none of the given texts when no file in it, read as UTF-8, contains any of them whole or any 24 consecutive characters of any of them. The texts are the task text of every job the scenario delegated and the codeword it minted, and the store is read only after every one of those jobs reads terminal. A failure names the file and which text it holds, never the text.',
+  promptDigest: "A job's record keeps its prompt only as the prompt's digest when the argv the job's record in the job store holds has as many elements as the argv its one engine process received, every element equals the engine's element at the same position except the prompt argument, and the element at the prompt argument's position is not the prompt and contains the lowercase hexadecimal SHA-256 of the prompt's UTF-8 bytes. The prompt argument is the value the engine received for its print option; the prompt is that value as the engine received it. A job that started no engine, or whose record holds no argv, fails the confirmation.",
 });
 
 export const ENGINE_OPTIONS = Object.freeze(['print', 'output-format', 'model', 'effort', 'mode', 'json-schema', 'conversation']);
@@ -32,6 +37,8 @@ export const SESSION_ENVIRONMENT = Object.freeze({
 });
 
 export const ENGINE_ENVIRONMENT_KEPT = Object.freeze(['PATH', 'HOME']);
+
+export const SCREENED_SETTINGS = Object.freeze(['locale', 'temporary-directory', 'search-path', 'home']);
 
 export const STAND_IN_BEHAVIOURS = Object.freeze([
   'completes-normally',
@@ -76,6 +83,7 @@ export const ENDING_REASONS = Object.freeze([
   'nonzero-exit-after-success',
   'no-conversation-to-continue',
   'cancel-requested',
+  'session-value-in-path-or-home',
 ]);
 
 export const UNVERIFIED_REASONS = Object.freeze([
@@ -100,6 +108,7 @@ export const TYPES = Object.freeze({
   Routing: '{ background?: true, wait?: true, fresh?: true, resume?: string, model?: string, effort?: string }',
   SessionEnvironment: '{ planted, forbiddenPrefixes, forbiddenValues } as SESSION_ENVIRONMENT, plus sentinels: Readonly<Record<VariableName, string>>; ACCEPTANCE_DEFINITIONS.sessionEnvironment says how each planted name is set and ACCEPTANCE_DEFINITIONS.sessionSentinels what the sentinels are',
   VariableName: 'one environment variable name, such as those in ENGINE_ENVIRONMENT_KEPT',
+  ScreenedSetting: 'one of SCREENED_SETTINGS; ACCEPTANCE_DEFINITIONS.sessionValueCarried says which variable each one sets and how',
 });
 
 export const DelegationDriver = Object.freeze({
@@ -109,6 +118,7 @@ export const DelegationDriver = Object.freeze({
   useStandInEngine: '(behaviour: StandInBehaviour) => Promise<void>',
   useInstalledEngineThen: '(tamper: ConversationTamper) => Promise<void>',
   useSessionEnvironment: '(session: SessionEnvironment) => Promise<void>',
+  useSessionValueIn: '(setting: ScreenedSetting, carrying: VariableName) => Promise<void>',
   releaseEngine: '(job: JobHandle) => Promise<void>',
   awaitEngineReportedSuccess: '(job: JobHandle) => Promise<void>',
   awaitJobEnd: '(job: JobHandle) => Promise<void>',
@@ -134,6 +144,9 @@ export const DelegationDriver = Object.freeze({
   confirmProofMatchesConversation: '(job: JobHandle) => Promise<void>',
   confirmConversationStartedEmpty: '(job: JobHandle) => Promise<void>',
   confirmConversationGrewInStore: '(job: JobHandle) => Promise<void>',
+  confirmConversationHoldsNoTurnOf: '(job: JobHandle, earlier: JobHandle) => Promise<void>',
+  confirmJobStoreHoldsNone: '(texts: readonly string[]) => Promise<void>',
+  confirmRecordKeepsPromptAsDigest: '(job: JobHandle) => Promise<void>',
 
   confirmFindingsAreEngineOutput: '(job: JobHandle) => Promise<void>',
   confirmFindingsSatisfySchema: '(job: JobHandle) => Promise<void>',
@@ -147,7 +160,6 @@ export const DelegationDriver = Object.freeze({
   confirmNamesConversation: '(job: JobHandle) => Promise<void>',
   confirmBodyAbsent: '(job: JobHandle) => Promise<void>',
   confirmAnswerContains: '(job: JobHandle, text: string) => Promise<void>',
-  confirmAnswerLacks: '(job: JobHandle, text: string) => Promise<void>',
   confirmSameConversation: '(job: JobHandle, earlier: JobHandle) => Promise<void>',
   confirmDifferentConversation: '(job: JobHandle, earlier: JobHandle) => Promise<void>',
   confirmEngineAskedToContinue: '(job: JobHandle, earlier: JobHandle) => Promise<void>',

@@ -25,6 +25,7 @@ const ENDING = Object.freeze({
   'the engine ran a different model than requested': 'model-mismatch',
   'there is no conversation to continue': 'no-conversation-to-continue',
   'a cancel was requested': 'cancel-requested',
+  "the session's search path or home carries a session value": 'session-value-in-path-or-home',
 });
 
 const UNVERIFIED = Object.freeze({
@@ -45,6 +46,20 @@ const VALUED_ROUTING = new Set(['resume', 'model', 'effort']);
 const NOT_RESUMING = Object.freeze({
   'names no prior job': 'none',
   'is explicitly marked fresh': 'fresh',
+});
+
+const SCREENED_SETTING = Object.freeze({
+  'locale setting': 'locale',
+  'temporary directory': 'temporary-directory',
+  'search path': 'search-path',
+  'home directory': 'home',
+});
+
+const SESSION_VALUE = Object.freeze({
+  'its session id': 'session-id',
+  'its plugin data location': 'plugin-data',
+  'the value of its per-run Claude Code setting': 'claude-sentinel',
+  'the value of its per-run Codex setting': 'codex-sentinel',
 });
 
 const FINISHED = Object.freeze({
@@ -109,6 +124,8 @@ export const delegationSteps = [
   Given(/^a job that ended before Antigravity reported a conversation$/, (dsl) => dsl.jobWithoutConversation()),
   Given(/^a background task job whose engine is still working$/, (dsl) => dsl.backgroundTaskStillWorking()),
   Given(/^a job that has already (.+)$/, (dsl, phrase) => dsl.jobAlreadyFinished(lookup(FINISHED, phrase, 'finished state'))),
+  Given(/^the session's (.+?) carries (.+)$/, (dsl, setting, value) =>
+    dsl.sessionValueIn(lookup(SCREENED_SETTING, setting, 'setting the engine may receive'), lookup(SESSION_VALUE, value, 'session value'))),
 
   When(/^a task is delegated to Antigravity in the background$/, (dsl) => dsl.task({ background: true })),
   When(/^a task is delegated to Antigravity in the foreground$/, (dsl) => dsl.task({ foreground: true })),
@@ -141,17 +158,18 @@ export const delegationSteps = [
   Then(/^the result carries Antigravity's own final response and the conversation it ran in$/, (dsl) => dsl.confirmCarriesEngineResponseAndConversation()),
   Then(/^the conversation file is in Antigravity's conversation store and gained steps during the run$/, (dsl) => dsl.confirmConversationGrewInStore()),
   Then(/^the answer contains the codeword$/, (dsl) => dsl.confirmAnswerContainsCodeword()),
-  Then(/^the answer does not contain the codeword$/, (dsl) => dsl.confirmAnswerLacksCodeword()),
   Then(/^the follow-up continued the earlier job's conversation$/, (dsl) => dsl.confirmContinuedEarlierConversation()),
   Then(/^the engine was asked to continue the earlier job's conversation$/, (dsl) => dsl.confirmEngineAskedToContinueEarlierConversation()),
   Then(/^the run's conversation is not the earlier job's$/, (dsl) => dsl.confirmConversationOfItsOwn()),
   Then(/^the engine was not asked to continue any conversation$/, (dsl) => dsl.confirmEngineAskedToContinueNothing()),
+  Then(/^the run's conversation held no steps before the run began$/, (dsl) => dsl.confirmConversationStartedEmpty()),
+  Then(/^the run's conversation holds no turn of the earlier job$/, (dsl) => dsl.confirmConversationHoldsNoTurnOfEarlierJob()),
   Then(/^the job reads (failed|cancelled) because (.+)$/, (dsl, state, phrase) =>
     dsl.confirmEndedBecause(state, lookup(ENDING, phrase, 'ending reason'))),
   Then(/^the result reads (failed|cancelled) because (.+), with the requested engine settings and no response or findings$/, (dsl, state, phrase) =>
     dsl.confirmEndedResult(state, lookup(ENDING, phrase, 'ending reason'))),
   Then(/^the job reads failed with a reason naming both the requested model and the engine's model$/, (dsl) => dsl.confirmFailureNamesBothModels()),
-  Then(/^no engine was started for the follow-up$/, (dsl) => dsl.confirmNoEngineStarted()),
+  Then(/^no engine was started for the (?:follow-up|job)$/, (dsl) => dsl.confirmNoEngineStarted()),
   Then(/^the delegation returned while the engine was still working$/, (dsl) => dsl.confirmReturnedWhileEngineWorking()),
   Then(/^the job's status reads running$/, (dsl) => dsl.confirmState('running')),
   Then(/^the job's result reads running with no body$/, async (dsl) => {
@@ -186,6 +204,8 @@ export const delegationSteps = [
     dsl.confirmEngineHoldsNothingOfTheSession()),
   Then(/^the engine's environment keeps the search path and home directory the session runs with$/, (dsl) =>
     dsl.confirmEngineKeepsWhatItRunsWith()),
+  Then(/^no file in the job store holds the task text or the codeword of any job$/, (dsl) => dsl.confirmJobStoreHoldsNoPromptText()),
+  Then(/^every job's record keeps its prompt only as the prompt's digest$/, (dsl) => dsl.confirmEveryPromptKeptAsDigest()),
   Then(/^the job started at most one engine$/, (dsl) => dsl.confirmAtMostOneEngine()),
   Then(/^the engine had exited when the job first read finished$/, (dsl) => dsl.confirmEngineGoneAtFinish()),
   Then(/^five seconds after the job first read finished, nothing the plugin started for the job is still running$/, (dsl) => dsl.confirmNothingLeftRunning()),

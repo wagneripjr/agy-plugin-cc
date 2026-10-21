@@ -75,10 +75,10 @@ Feature: FR-001 Antigravity is a delegation target beside Codex
 
     Scenario Outline: A run that does not resume starts a conversation of its own
       Given a task job that was told a secret codeword and asked not to write it anywhere
-      And the codeword appears nowhere in the project or its history
       When a run that <resumes nothing> asks for the codeword in the same project
-      Then the answer does not contain the codeword
-      And the run's conversation is not the earlier job's
+      Then the run's conversation is not the earlier job's
+      And the run's conversation held no steps before the run began
+      And the run's conversation holds no turn of the earlier job
       And the engine was not asked to continue any conversation
 
       Examples:
@@ -261,6 +261,53 @@ Feature: FR-001 Antigravity is a delegation target beside Codex
         | a task                         |
         | a follow-up on an earlier task |
         | a task in the background       |
+
+    @BUG-001
+    Scenario Outline: A setting the engine may receive never carries a value of the delegating session
+      Given a project with the planted defect
+      And Antigravity will complete its work normally
+      And the session's <setting> carries <session value>
+      When a task is delegated to Antigravity
+      Then the engine's environment holds none of the session's Claude Code or Codex settings and nothing that points at its plugin data, transcript or session id
+
+      Examples:
+        | setting             | session value                                |
+        | locale setting      | its session id                               |
+        | locale setting      | the value of its per-run Codex setting       |
+        | temporary directory | its plugin data location                     |
+        | temporary directory | the value of its per-run Claude Code setting |
+
+    @BUG-001
+    Scenario Outline: A session whose search path or home carries a session value fails the job before the engine starts
+      Given a project with the planted defect
+      And Antigravity will complete its work normally
+      And the session's <setting> carries <session value>
+      When a task is delegated to Antigravity
+      Then the job reads failed because the session's search path or home carries a session value
+      And no engine was started for the job
+
+      Examples:
+        | setting        | session value                                |
+        | search path    | its session id                               |
+        | search path    | the value of its per-run Claude Code setting |
+        | home directory | its plugin data location                     |
+        | home directory | the value of its per-run Codex setting       |
+
+  Rule: The job store keeps no prompt text
+
+    @BUG-001
+    Scenario Outline: The job store keeps every job's prompt only as its digest
+      Given Antigravity will complete its work normally
+      And a task job that was told a secret codeword and asked not to write it anywhere
+      When <a run> is delegated to Antigravity
+      Then no file in the job store holds the task text or the codeword of any job
+      And every job's record keeps its prompt only as the prompt's digest
+
+      Examples:
+        | a run                    |
+        | a follow-up on that job  |
+        | a review                 |
+        | a task in the background |
 
   Rule: One engine process per job, and nothing left behind
 

@@ -158,5 +158,26 @@
   },
   {
     "term": "home-directory"
+  },
+  {
+    "term": "job-store"
+  },
+  {
+    "term": "prompt-digest"
+  },
+  {
+    "term": "session-value"
+  },
+  {
+    "term": "session-sentinel"
+  },
+  {
+    "term": "locale-setting"
+  },
+  {
+    "term": "temporary-directory"
+  },
+  {
+    "term": "user-input-step"
   }
 ]

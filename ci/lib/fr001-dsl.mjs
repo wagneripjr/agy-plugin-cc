@@ -1,4 +1,4 @@
-//status: Approved
+//status: Draft
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -65,6 +65,19 @@ function sessionOfThisRun() {
   return Object.freeze({ ...SESSION_ENVIRONMENT, sentinels: Object.freeze(sentinels) });
 }
 
+const SESSION_VALUE_HELD_BY = Object.freeze({
+  'session-id': () => 'CODEX_COMPANION_SESSION_ID',
+  'plugin-data': () => 'CLAUDE_PLUGIN_DATA',
+  'claude-sentinel': () => sentinelNamed('CLAUDE_'),
+  'codex-sentinel': () => sentinelNamed('CODEX_'),
+});
+
+function sentinelNamed(prefix) {
+  const name = Object.keys(SESSION_OF_THIS_RUN.sentinels).find((candidate) => candidate.startsWith(prefix));
+  if (!name) throw new InstrumentError(`the session of this run carries no per-run setting named ${prefix}…`);
+  return name;
+}
+
 function mintCodeword() {
   return `KESTREL-${randomBytes(4).toString('hex').toUpperCase()}`;
 }
@@ -76,6 +89,7 @@ export class DelegationDsl {
   #engine = 'installed';
   #project = null;
   #jobs = new Map();
+  #delegated = [];
   #latest = null;
   #codeword = null;
   #requested = null;
@@ -116,6 +130,7 @@ export class DelegationDsl {
     this.#driver = host.#driver;
     this.#project = host.#project;
     this.#jobs = host.#jobs;
+    this.#delegated = host.#delegated;
     this.#latest = host.#latest;
     this.#requested = host.#requested;
   }
@@ -126,8 +141,9 @@ export class DelegationDsl {
     return job;
   }
 
-  #remember(alias, job) {
+  #remember(alias, job, text) {
     this.#jobs.set(alias, job);
+    this.#delegated.push({ job, text });
     this.#latest = job;
     return job;
   }
@@ -161,6 +177,11 @@ export class DelegationDsl {
     this.#engine = 'stand-in';
   }
 
+  async sessionValueIn(setting, value) {
+    if (!Object.hasOwn(SESSION_VALUE_HELD_BY, value)) throw new InstrumentError(`the vocabulary has no session value called "${value}"`);
+    await this.#driver.useSessionValueIn(setting, SESSION_VALUE_HELD_BY[value]());
+  }
+
   async conversationWillBeTampered(tamper) {
     await this.#driver.useInstalledEngineThen(tamper);
     this.#engine = 'tampered';
@@ -173,7 +194,7 @@ export class DelegationDsl {
     const request = { project, leg, text: text ?? (leg === 'task' ? FIX_THE_DEFECT : undefined), background, foreground, fresh };
     if (resume) request.resume = this.#job(resume);
     if (named) request.settings = named;
-    return this.#remember(alias, await this.#driver.delegate(request));
+    return this.#remember(alias, await this.#driver.delegate(request), request.text);
   }
 
   async review() {
@@ -367,8 +388,31 @@ export class DelegationDsl {
     await this.#driver.confirmAnswerContains(this.#job(), this.#codeword);
   }
 
-  async confirmAnswerLacksCodeword() {
-    await this.#driver.confirmAnswerLacks(this.#job(), this.#codeword);
+  async confirmConversationStartedEmpty() {
+    await this.#driver.confirmConversationStartedEmpty(this.#job());
+  }
+
+  async confirmConversationHoldsNoTurnOfEarlierJob() {
+    await this.#driver.confirmConversationHoldsNoTurnOf(this.#job(), this.#job('earlier'));
+  }
+
+  #requireDelegations() {
+    if (this.#delegated.length === 0) throw new InstrumentError('the scenario reads the job store before delegating any job');
+    return this.#delegated;
+  }
+
+  async confirmJobStoreHoldsNoPromptText() {
+    const delegated = this.#requireDelegations();
+    for (const { job } of delegated) await this.#driver.awaitJobEnd(job);
+    const texts = [...delegated.map(({ text }) => text), this.#codeword].filter(Boolean);
+    await this.#driver.confirmJobStoreHoldsNone(texts);
+  }
+
+  async confirmEveryPromptKeptAsDigest() {
+    for (const { job } of this.#requireDelegations()) {
+      await this.#driver.awaitJobEnd(job);
+      await this.#driver.confirmRecordKeepsPromptAsDigest(job);
+    }
   }
 
   async confirmContinuedEarlierConversation() {
