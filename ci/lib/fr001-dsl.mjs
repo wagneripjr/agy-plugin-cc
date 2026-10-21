@@ -5,7 +5,14 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { InstrumentError } from './feature-runner.mjs';
-import { DRIVER_MODULES, DelegationDriver, ENGINE_OPTIONS, PluginSourceDriver } from './fr001-driver-contract.mjs';
+import {
+  DRIVER_MODULES,
+  DelegationDriver,
+  ENGINE_ENVIRONMENT_KEPT,
+  ENGINE_OPTIONS,
+  PluginSourceDriver,
+  SESSION_ENVIRONMENT,
+} from './fr001-driver-contract.mjs';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -77,6 +84,7 @@ export class DelegationDsl {
   static async create(options) {
     const driver = await loadDriver(DRIVER_MODULES.delegation, DelegationDriver);
     await driver.useInstalledEngine();
+    await driver.useSessionEnvironment(SESSION_ENVIRONMENT);
     return new DelegationDsl(driver, options);
   }
 
@@ -405,6 +413,14 @@ export class DelegationDsl {
 
   async confirmDefaultModeUnsandboxed() {
     await this.#driver.confirmDefaultModeUnsandboxed(this.#job());
+  }
+
+  async confirmEngineHoldsNothingOfTheSession() {
+    await this.#driver.confirmEngineEnvironmentOmitsSession(this.#job(), SESSION_ENVIRONMENT);
+  }
+
+  async confirmEngineKeepsWhatItRunsWith() {
+    await this.#driver.confirmEngineEnvironmentKeeps(this.#job(), ENGINE_ENVIRONMENT_KEPT);
   }
 
   async confirmReturnedWhileEngineWorking() {

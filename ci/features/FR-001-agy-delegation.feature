@@ -16,6 +16,10 @@ Feature: FR-001 Antigravity is a delegation target beside Codex
   kinds runs once per suite run, in a project of its own, and every tagged scenario of that
   kind checks that one run. A tagged row that sets how the engine behaves runs on its own.
 
+  Every delegation is made from a session like the one Claude Code gives a plugin's commands:
+  its settings name the plugin's data, the plugin's root, the session's transcript and the
+  session's id.
+
   Rule: A review returns findings, never prose, and cannot write
 
     Scenario: A review returns Antigravity's own findings on the planted defect, leaves the project untouched and proves its turn
@@ -240,6 +244,22 @@ Feature: FR-001 Antigravity is a delegation target beside Codex
       Given a project with the planted defect
       When a task is delegated to Antigravity
       Then the engine ran in neither plan mode nor a sandbox
+
+  Rule: The engine is given what it needs to run, and nothing of the session that delegated to it
+
+    @shared-run @BUG-001
+    Scenario Outline: The engine runs without the delegating session's settings and still has its search path and home
+      Given a project with the planted defect
+      When <a run> is delegated to Antigravity
+      Then the engine's environment holds none of the session's Claude Code or Codex settings and nothing that points at its plugin data, transcript or session id
+      And the engine's environment keeps the search path and home directory the session runs with
+
+      Examples:
+        | a run                          |
+        | a review                       |
+        | a task                         |
+        | a follow-up on an earlier task |
+        | a task in the background       |
 
   Rule: One engine process per job, and nothing left behind
 

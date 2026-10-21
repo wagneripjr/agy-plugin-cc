@@ -146,5 +146,17 @@
   },
   {
     "term": "shared-run"
+  },
+  {
+    "term": "session-environment"
+  },
+  {
+    "term": "engine-environment"
+  },
+  {
+    "term": "search-path"
+  },
+  {
+    "term": "home-directory"
   }
 ]

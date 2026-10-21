@@ -182,6 +182,10 @@ export const delegationSteps = [
     dsl.confirmOnlyDelegationOptions()),
   Then(/^the engine ran in plan mode with the shipped findings schema$/, (dsl) => dsl.confirmReadOnlyWithSchema()),
   Then(/^the engine ran in neither plan mode nor a sandbox$/, (dsl) => dsl.confirmDefaultModeUnsandboxed()),
+  Then(/^the engine's environment holds none of the session's Claude Code or Codex settings and nothing that points at its plugin data, transcript or session id$/, (dsl) =>
+    dsl.confirmEngineHoldsNothingOfTheSession()),
+  Then(/^the engine's environment keeps the search path and home directory the session runs with$/, (dsl) =>
+    dsl.confirmEngineKeepsWhatItRunsWith()),
   Then(/^the job started at most one engine$/, (dsl) => dsl.confirmAtMostOneEngine()),
   Then(/^the engine had exited when the job first read finished$/, (dsl) => dsl.confirmEngineGoneAtFinish()),
   Then(/^five seconds after the job first read finished, nothing the plugin started for the job is still running$/, (dsl) => dsl.confirmNothingLeftRunning()),

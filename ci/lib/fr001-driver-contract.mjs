@@ -16,9 +16,21 @@ export const ACCEPTANCE_DEFINITIONS = Object.freeze({
   fixedDefect: `The defect is fixed when node --input-type=module -e "import('./math.mjs').then(m=>process.exit(m.add(2,3)===5?0:1))" exits 0 in the fixture.`,
   conversationStore: 'A conversation is the SQLite file ~/.gemini/antigravity-cli/conversations/<conversation_id>.db. Its steps table is keyed by idx, and a user-input step has step_type 14 with the prompt text readable inside its step_payload.',
   lingerWindow: 'The observation origin is the moment the job record first reads terminal; the window closes 5 seconds after that origin.',
+  sessionEnvironment: 'From useSessionEnvironment on, every runtime invocation the driver makes (delegation, status, result, cancel, setup) is started with the environment the driver would otherwise give it plus SESSION_ENVIRONMENT.planted, each set as Claude Code sets it for a plugin command: CLAUDE_PLUGIN_DATA is the job store the driver already isolates; CLAUDE_PLUGIN_ROOT is the absolute path of the shipped plugin root; CODEX_COMPANION_TRANSCRIPT_PATH is the absolute path of a transcript file the driver creates, outside the job store and every fixture project, holding a line that carries the session id; CODEX_COMPANION_SESSION_ID is a session id minted once per driver. A planted value overrides any value the suite itself inherited under the same name.',
+  engineEnvironment: "The engine's environment is the environment the process standing at agy's place on the search path holds when it starts, recorded by that process itself before it does anything else: the recording pass-through in front of the installed agy, which hands its own environment to agy unchanged, or the stand-in. It is never the environment the driver handed the runtime. A job's engine environment is that of the one engine process the job started; a job that started none has no engine environment, and both environment confirmations then fail.",
+  sessionOmitted: 'The engine environment omits the session when no variable name in it begins with any of SESSION_ENVIRONMENT.forbiddenPrefixes, and no variable value in it contains, as a substring, the value planted under any name in SESSION_ENVIRONMENT.forbiddenValues. A failure names each offending variable and the rule it broke, never its value.',
+  engineKeeps: "The engine environment keeps a variable when it holds that variable with exactly the value the runtime invocation that started the job was given. A failure names the variable and whether it was absent or changed.",
 });
 
 export const ENGINE_OPTIONS = Object.freeze(['print', 'output-format', 'model', 'effort', 'mode', 'json-schema', 'conversation']);
+
+export const SESSION_ENVIRONMENT = Object.freeze({
+  planted: Object.freeze(['CLAUDE_PLUGIN_DATA', 'CLAUDE_PLUGIN_ROOT', 'CODEX_COMPANION_TRANSCRIPT_PATH', 'CODEX_COMPANION_SESSION_ID']),
+  forbiddenPrefixes: Object.freeze(['CLAUDE_', 'CODEX_']),
+  forbiddenValues: Object.freeze(['CLAUDE_PLUGIN_DATA', 'CODEX_COMPANION_TRANSCRIPT_PATH', 'CODEX_COMPANION_SESSION_ID']),
+});
+
+export const ENGINE_ENVIRONMENT_KEPT = Object.freeze(['PATH', 'HOME']);
 
 export const STAND_IN_BEHAVIOURS = Object.freeze([
   'completes-normally',
@@ -73,7 +85,7 @@ export const UNVERIFIED_REASONS = Object.freeze([
 
 export const TYPES = Object.freeze({
   ProjectHandle: 'opaque; one fixture project the driver created, as ACCEPTANCE_DEFINITIONS.fixture defines it',
-  JobHandle: "opaque; one job the plugin runtime created, together with what the driver observed independently of the plugin's own record: the conversation store and the step count of any conversation the job names before the run began and after it ended, and the engine's own argv, process id and event stream as the engine received and emitted them",
+  JobHandle: "opaque; one job the plugin runtime created, together with what the driver observed independently of the plugin's own record: the conversation store and the step count of any conversation the job names before the run began and after it ended, and the engine's own argv, environment, process id and event stream as the engine received and emitted them",
   RecordReading: 'opaque; what one status read and one result read of a job reported: state, reason, engine settings, response, findings, conversation id and proof',
   StandInBehaviour: 'one of STAND_IN_BEHAVIOURS',
   ConversationTamper: 'one of CONVERSATION_TAMPERS; applied between the engine process exiting and the plugin opening the conversation file',
@@ -85,6 +97,8 @@ export const TYPES = Object.freeze({
   Location: '{ file: string, line: number }',
   DelegationRequest: '{ project: ProjectHandle, leg: "review" | "task", text?: string, background?: boolean, foreground?: boolean, resume?: JobHandle, fresh?: boolean, settings?: EngineSettings }',
   Routing: '{ background?: true, wait?: true, fresh?: true, resume?: string, model?: string, effort?: string }',
+  SessionEnvironment: 'SESSION_ENVIRONMENT; ACCEPTANCE_DEFINITIONS.sessionEnvironment says how each planted name is set',
+  VariableName: 'one environment variable name, such as those in ENGINE_ENVIRONMENT_KEPT',
 });
 
 export const DelegationDriver = Object.freeze({
@@ -93,6 +107,7 @@ export const DelegationDriver = Object.freeze({
   useAbsentEngine: '() => Promise<void>',
   useStandInEngine: '(behaviour: StandInBehaviour) => Promise<void>',
   useInstalledEngineThen: '(tamper: ConversationTamper) => Promise<void>',
+  useSessionEnvironment: '(session: SessionEnvironment) => Promise<void>',
   releaseEngine: '(job: JobHandle) => Promise<void>',
   awaitEngineReportedSuccess: '(job: JobHandle) => Promise<void>',
   awaitJobEnd: '(job: JobHandle) => Promise<void>',
@@ -147,6 +162,8 @@ export const DelegationDriver = Object.freeze({
   confirmOnlyDelegationOptions: '(job: JobHandle, allowed: readonly EngineOption[]) => Promise<void>',
   confirmReadOnlyWithSchema: '(job: JobHandle) => Promise<void>',
   confirmDefaultModeUnsandboxed: '(job: JobHandle) => Promise<void>',
+  confirmEngineEnvironmentOmitsSession: '(job: JobHandle, session: SessionEnvironment) => Promise<void>',
+  confirmEngineEnvironmentKeeps: '(job: JobHandle, kept: readonly VariableName[]) => Promise<void>',
 
   confirmReturnedWhileEngineWorking: '(job: JobHandle) => Promise<void>',
   confirmEngineStopped: '(job: JobHandle) => Promise<void>',

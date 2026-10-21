@@ -1,5 +1,6 @@
 //status: Draft
 // sdlc-proves: FR-001
+// sdlc-proves: BUG-001
 import { join } from 'node:path';
 
 import { runFeature } from './lib/feature-runner.mjs';
