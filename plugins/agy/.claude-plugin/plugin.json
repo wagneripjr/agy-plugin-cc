@@ -2,6 +2,8 @@
   "name": "agy",
   "version": "0.2.0",
   "description": "Delegate a review or a task to Antigravity (agy) as a tracked, resumable, verifiable job.",
+  "license": "MIT",
+  "repository": "https://github.com/wagneripjr/agy-plugin-cc",
   "author": {
     "name": "Wagner Ignacio Pinto Junior"
   }
