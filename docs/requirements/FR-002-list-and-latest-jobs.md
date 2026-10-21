@@ -1,7 +1,7 @@
 ---
 id: FR-002
 type: Requirement
-status: Approved
+status: Draft
 title: "FR-002: Status with no job id lists jobs, and result with no job id shows the latest"
 description: A session can find its agy jobs without remembering their ids. Status with no id lists the workspace's jobs newest first, and result with no id reports the newest one.
 derives-from: [hub:R-121]
@@ -61,8 +61,11 @@ for finished jobs is not adopted.
 10. **Prompt text stays where FR-001 allows it.** No status entry, in either form, carries any part of
     a job's prompt. A no-id result carries prompt text only where `result <id>` would: inside the
     engine's own response or findings of a succeeded job.
-11. **The subagent.** A request to the forwarding subagent that is empty or only whitespace reaches
-    the runtime as status with no id. Every other request keeps FR-001 contract 8's grammar. Like
+11. **The subagent.** A request to the forwarding subagent that consists only of whitespace reaches
+    the runtime as status with no id. Every other request, including the literal text
+    `(no content)`, keeps FR-001 contract 8's grammar. Claude Code delivers an empty dispatch to a
+    subagent as the text `(no content)`, which cannot be told apart from that literal request, so an
+    empty request is outside this contract. Like
     FR-001's subagent checks, this runs a live Claude Code subagent. The runtime-invocation recorder
     observes the call, so the check reads what the runtime received, not what the model says.
 
@@ -105,9 +108,9 @@ Each check uses its own empty job store and the stand-in engine, except the suba
 - **No prompt text.** Each job's prompt carries a unique random marker, and the stand-in's response
   quotes it. The marker appears in no status listing, in either form. In the no-id result it appears
   only inside the engine response, or the findings, of a succeeded job.
-- **Subagent.** Given an empty request, and separately a whitespace-only request, the forwarding
-  subagent's single runtime call is recorded as status with no id. Its reply equals the runtime's
-  output.
+- **Subagent.** Given a whitespace-only request, the forwarding subagent's single runtime call is
+  recorded as status with no id, and its reply equals the runtime's output. Given the literal request
+  `(no content)`, its single runtime call is recorded as a task whose text is `(no content)`.
 
 ## Out of scope
 
