@@ -1,6 +1,6 @@
 ---
 description: Show the result of an Antigravity (agy) job, with its response once it succeeded
-argument-hint: '<job-id> [--json]'
+argument-hint: '[<job-id>] [--json]'
 disable-model-invocation: true
 allowed-tools: Bash(node:*)
 ---

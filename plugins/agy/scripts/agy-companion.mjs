@@ -5,7 +5,7 @@ import { startInBackground } from './lib/background.mjs';
 import { cancelJob } from './lib/cancel.mjs';
 import { DEFAULT_SETTINGS, failJob, prepareRun, runEngine } from './lib/engine.mjs';
 import { claimRunner, conversationToContinue, createJob, isJobId, readJob } from './lib/jobs.mjs';
-import { listJobs } from './lib/listing.mjs';
+import { listJobs, newestJob } from './lib/listing.mjs';
 import { renderJob, renderListing } from './lib/render.mjs';
 import { reviewPrompt } from './lib/review.mjs';
 import { renderSetup, setup } from './lib/setup.mjs';
@@ -16,6 +16,7 @@ const USAGE = [
   '       agy-companion.mjs review [--background|--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] [focus]',
   '       agy-companion.mjs task [--background|--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] <task text>',
   '       agy-companion.mjs status [--all] [--json]',
+  '       agy-companion.mjs result [--json]',
   '       agy-companion.mjs status|result|cancel <job-id> [--json]',
   '',
 ].join('\n');
@@ -61,6 +62,16 @@ async function runJob([id, ...extra]) {
   await runEngine(readJob(id), prompt);
 }
 
+async function latestResult(flags) {
+  const job = await newestJob({ cwd: process.cwd() });
+  if (!job) {
+    process.stderr.write('No agy jobs in this workspace.\n');
+    process.exitCode = 1;
+    return;
+  }
+  process.stdout.write(renderJob(job, { json: flags.length > 0, body: true }));
+}
+
 async function read(command, [id, ...flags]) {
   if (!id || !flags.every((flag) => flag === '--json')) return usage();
   const { record: job, settled } = command === 'cancel' ? await cancelJob(id) : { record: readJob(id), settled: true };
@@ -90,6 +101,8 @@ try {
   } else if (command === 'status' && rest.every((arg) => arg === '--all' || arg === '--json')) {
     const all = rest.includes('--all');
     process.stdout.write(renderListing(await listJobs({ all, cwd: process.cwd() }), { json: rest.includes('--json'), all }));
+  } else if (command === 'result' && rest.every((arg) => arg === '--json')) {
+    await latestResult(rest);
   } else if (command === 'status' || command === 'result' || command === 'cancel') {
     await read(command, rest);
   } else {

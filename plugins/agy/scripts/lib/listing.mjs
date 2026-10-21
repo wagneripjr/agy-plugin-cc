@@ -22,11 +22,18 @@ export function newestFirst(a, b) {
   return Buffer.compare(Buffer.from(b.id), Buffer.from(a.id));
 }
 
-export async function listJobs({ all, cwd }) {
+async function ordered({ all, cwd }) {
   const records = allRecords().map((record) => ({ record, directory: directoryOf(record) }));
   const root = all ? null : await workspaceRoot(cwd);
   return records
     .filter(({ directory }) => all || inWorkspace(directory, root))
-    .sort((a, b) => newestFirst(a.record, b.record))
-    .slice(0, LIMIT);
+    .sort((a, b) => newestFirst(a.record, b.record));
+}
+
+export async function listJobs({ all, cwd }) {
+  return (await ordered({ all, cwd })).slice(0, LIMIT);
+}
+
+export async function newestJob({ cwd }) {
+  return (await ordered({ all: false, cwd }))[0]?.record ?? null;
 }
