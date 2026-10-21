@@ -23,10 +23,13 @@ const FIXTURE = Object.freeze({
   'strings.mjs': 'export function upper(s) {\n  return s.toUpperCase();\n}\n',
   'README.md': '# Fixture\n\nA small module pair used to exercise delegation.\n',
 });
+const PRODUCT_READINESS_MS = 30_000;
+const PRODUCT_TAKEOVER_MS = 8_000;
+const BACKGROUND_START_MARGIN_MS = 10_000;
 const DEADLINE = Object.freeze({
   delegation: 240_000,
   standInDelegation: 15_000,
-  background: 15_000,
+  background: PRODUCT_READINESS_MS + PRODUCT_TAKEOVER_MS + BACKGROUND_START_MARGIN_MS,
   reader: 15_000,
   cancel: 15_000,
   setup: 60_000,
