@@ -1,6 +1,6 @@
 ---
 description: Show the state of an Antigravity (agy) job without waiting for it
-argument-hint: '<job-id> [--json]'
+argument-hint: '[<job-id>] [--all] [--json]'
 disable-model-invocation: true
 allowed-tools: Bash(node:*)
 ---

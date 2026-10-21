@@ -5,7 +5,8 @@ import { startInBackground } from './lib/background.mjs';
 import { cancelJob } from './lib/cancel.mjs';
 import { DEFAULT_SETTINGS, failJob, prepareRun, runEngine } from './lib/engine.mjs';
 import { claimRunner, conversationToContinue, createJob, isJobId, readJob } from './lib/jobs.mjs';
-import { renderJob } from './lib/render.mjs';
+import { listJobs } from './lib/listing.mjs';
+import { renderJob, renderListing } from './lib/render.mjs';
 import { reviewPrompt } from './lib/review.mjs';
 import { renderSetup, setup } from './lib/setup.mjs';
 
@@ -14,6 +15,7 @@ const USAGE = [
   '       agy-companion.mjs setup [--json]',
   '       agy-companion.mjs review [--background|--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] [focus]',
   '       agy-companion.mjs task [--background|--wait] [--fresh|--resume <job-id>] [--model <model>] [--effort <effort>] [--json] [--] <task text>',
+  '       agy-companion.mjs status [--all] [--json]',
   '       agy-companion.mjs status|result|cancel <job-id> [--json]',
   '',
 ].join('\n');
@@ -85,6 +87,9 @@ try {
     await delegate(command, rest);
   } else if (command === 'run-job') {
     await runJob(rest);
+  } else if (command === 'status' && rest.every((arg) => arg === '--all' || arg === '--json')) {
+    const all = rest.includes('--all');
+    process.stdout.write(renderListing(await listJobs({ all, cwd: process.cwd() }), { json: rest.includes('--json'), all }));
   } else if (command === 'status' || command === 'result' || command === 'cancel') {
     await read(command, rest);
   } else {

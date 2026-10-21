@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
@@ -9,9 +9,26 @@ export function isJobId(id) {
   return JOB_ID.test(id ?? '');
 }
 
-export function jobsDir(cwd = process.cwd()) {
+export function storeDir() {
   const base = process.env.CLAUDE_PLUGIN_DATA || join(homedir(), '.local', 'state', 'agy-plugin-cc');
-  const dir = resolve(base, 'jobs');
+  return resolve(base, 'jobs');
+}
+
+export function allRecords() {
+  let names;
+  try {
+    names = readdirSync(storeDir());
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+  return names
+    .filter((name) => name.endsWith('.json') && isJobId(name.slice(0, -'.json'.length)))
+    .map((name) => JSON.parse(readFileSync(join(storeDir(), name), 'utf8')));
+}
+
+export function jobsDir(cwd = process.cwd()) {
+  const dir = storeDir();
   const inside = relative(resolve(cwd), dir);
   if (inside === '' || (inside !== '..' && !inside.startsWith(`..${sep}`) && !isAbsolute(inside))) {
     throw new Error(`refusing to keep job records inside the working tree: ${dir}`);

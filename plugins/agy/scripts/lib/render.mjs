@@ -22,6 +22,28 @@ function findingLines({ findings, summary }) {
   return summary ? [...lines, '', `Summary: ${summary}`] : lines;
 }
 
+function listingEntry({ record, directory }, all) {
+  const entry = {
+    id: record.id,
+    leg: record.kind,
+    state: record.state,
+    model: record.settings.model,
+    createdAt: record.createdAt,
+    verification: record.state === 'succeeded' ? record.proof?.verification ?? 'unverified' : null,
+  };
+  return all ? { ...entry, directory } : entry;
+}
+
+export function renderListing(listed, { json = false, all = false } = {}) {
+  const entries = listed.map((item) => listingEntry(item, all));
+  if (json) return `${JSON.stringify(entries, null, 2)}\n`;
+  if (entries.length === 0) return `No agy jobs${all ? '' : ' in this workspace'}.\n`;
+  const lines = entries.map((entry) => [entry.id, entry.leg, entry.state, entry.model, entry.createdAt, entry.verification, entry.directory]
+    .filter((value) => value !== null && value !== undefined)
+    .join('  '));
+  return `${lines.join('\n')}\n`;
+}
+
 export function renderJob(job, { json = false, body = true } = {}) {
   const shown = report(job);
   if (json) return `${JSON.stringify(shown, null, 2)}\n`;
