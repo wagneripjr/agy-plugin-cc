@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { cancelRequested, claimTerminal, markSpawning, readJob, writeRecord } from './jobs.mjs';
-import { killGroup } from './process.mjs';
+import { engineEnvironment, killGroup } from './process.mjs';
 import { marker, stepCount, unproven, verify } from './proof.mjs';
 import { FINDINGS_SCHEMA, findingsViolations } from './schema.mjs';
 
@@ -81,6 +81,10 @@ export function finalize(job, run, exit) {
   return job;
 }
 
+export function sessionValueMessage(variable) {
+  return `the session's ${variable} carries the value of one of its CLAUDE_ or CODEX_ settings, so agy was not started`;
+}
+
 export function failJob(job, code, message) {
   return finalize(job, { result: null, reason: ending(code, message), stderr: '' }, { code: null, signal: null });
 }
@@ -95,8 +99,10 @@ export function runEngine(job) {
   return new Promise((done) => {
     const run = { result: null, reason: null, stderr: '' };
     if (cancelRequested(job.id)) return done(finalize(job, run, { code: null, signal: null }));
+    const { env, refused } = engineEnvironment();
+    if (refused) return done(failJob(job, 'session-value-in-path-or-home', sessionValueMessage(refused)));
     markSpawning(job.id);
-    const child = spawn(ENGINE, job.argv, { cwd: job.cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(ENGINE, job.argv, { cwd: job.cwd, detached: true, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let ended = false;
     const end = (exit) => {
       if (ended) return;

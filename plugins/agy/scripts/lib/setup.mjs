@@ -1,4 +1,5 @@
-import { runCommand } from './process.mjs';
+import { sessionValueMessage } from './engine.mjs';
+import { engineEnvironment, runCommand } from './process.mjs';
 
 const ENGINE = 'agy';
 
@@ -11,7 +12,9 @@ function modelIds(stdout) {
 }
 
 export async function setup() {
-  const version = await runCommand(ENGINE, ['--version']);
+  const { env, refused } = engineEnvironment();
+  if (refused) throw new Error(sessionValueMessage(refused));
+  const version = await runCommand(ENGINE, ['--version'], env);
   if (version.error) {
     return {
       engine: { installed: false, version: null, message: `${ENGINE} is not on the path (${version.error.code ?? version.error.message})` },
@@ -22,9 +25,9 @@ export async function setup() {
     };
   }
   const [models, plugins, mcp] = await Promise.all([
-    runCommand(ENGINE, ['models']),
-    runCommand(ENGINE, ['plugin', 'list']),
-    runCommand(ENGINE, ['mcp', 'list']),
+    runCommand(ENGINE, ['models'], env),
+    runCommand(ENGINE, ['plugin', 'list'], env),
+    runCommand(ENGINE, ['mcp', 'list'], env),
   ]);
   const listed = models.code === 0 ? modelIds(models.stdout) : [];
   const usable = listed.length > 0;
