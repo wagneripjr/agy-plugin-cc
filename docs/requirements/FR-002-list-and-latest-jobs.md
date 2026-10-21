@@ -6,6 +6,7 @@ title: "FR-002: Status with no job id lists jobs, and result with no job id show
 description: A session can find its agy jobs without remembering their ids. Status with no id lists the workspace's jobs newest first, and result with no id reports the newest one.
 derives-from: [hub:R-121]
 adrs: [ADR-001, ADR-002]
+specs: [ci/features/FR-002-*.feature, ci/test-fr002-*.mjs]
 ---
 # FR-002: Status with no job id lists jobs, and result with no job id shows the latest
 

@@ -1,0 +1,144 @@
+#status: Draft
+[
+  {
+    "term": "job"
+  },
+  {
+    "term": "job-store"
+  },
+  {
+    "term": "workspace"
+  },
+  {
+    "term": "workspace-root"
+  },
+  {
+    "term": "job-listing"
+  },
+  {
+    "term": "listing-order"
+  },
+  {
+    "term": "listing-limit"
+  },
+  {
+    "term": "created-at"
+  },
+  {
+    "term": "job-id"
+  },
+  {
+    "term": "leg"
+  },
+  {
+    "term": "review"
+  },
+  {
+    "term": "task"
+  },
+  {
+    "term": "job-state"
+  },
+  {
+    "term": "model"
+  },
+  {
+    "term": "verification"
+  },
+  {
+    "term": "directory"
+  },
+  {
+    "term": "every-workspace-listing"
+  },
+  {
+    "term": "repository"
+  },
+  {
+    "term": "subdirectory"
+  },
+  {
+    "term": "outside-directory"
+  },
+  {
+    "term": "prefix-sibling"
+  },
+  {
+    "term": "symbolic-link"
+  },
+  {
+    "term": "filesystem-root"
+  },
+  {
+    "term": "readable-form"
+  },
+  {
+    "term": "machine-readable-form"
+  },
+  {
+    "term": "no-jobs-message"
+  },
+  {
+    "term": "latest-result"
+  },
+  {
+    "term": "newest-job"
+  },
+  {
+    "term": "result"
+  },
+  {
+    "term": "status"
+  },
+  {
+    "term": "cancel"
+  },
+  {
+    "term": "usage-error"
+  },
+  {
+    "term": "held-job"
+  },
+  {
+    "term": "engine"
+  },
+  {
+    "term": "engine-process"
+  },
+  {
+    "term": "stand-in-engine"
+  },
+  {
+    "term": "job-record"
+  },
+  {
+    "term": "read-only-reading"
+  },
+  {
+    "term": "process-start"
+  },
+  {
+    "term": "prompt"
+  },
+  {
+    "term": "prompt-marker"
+  },
+  {
+    "term": "final-response"
+  },
+  {
+    "term": "finding"
+  },
+  {
+    "term": "subagent"
+  },
+  {
+    "term": "blank-request"
+  },
+  {
+    "term": "runtime"
+  },
+  {
+    "term": "runtime-invocation"
+  }
+]
